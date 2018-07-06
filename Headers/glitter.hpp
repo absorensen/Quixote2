@@ -12,7 +12,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <GLFW/glfw3.h>
-
+#include <random>
 
 // Reference: https://github.com/nothings/stb/blob/master/stb_image.h#L4
 // To use stb_image, add this in *one* C++ source file.
@@ -31,5 +31,10 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 unsigned int loadTexture(char const * path);
 void renderCube();
 void renderQuad();
+
+float lerp(float a, float b, float f)
+{
+	return a + f * (b - a);
+}
 
 #endif //~ Glitter Header
