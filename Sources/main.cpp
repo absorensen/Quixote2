@@ -29,7 +29,7 @@ std::vector<glm::vec3> ssaoNoise;
 
 
 
-unsigned int gBuffer, gPosition, gNormal, gAlbedoSpec, gAO, rboDepth, deferredContrib;
+unsigned int gBuffer, gPosition, gNormal, gAlbedoSpec, gAO, deferredDepth, deferredContrib;
 unsigned int ssaoFBO, ssaoBlurFBO, ssaoBuffer, ssaoBufferBlur;
 unsigned int forwardFBO, forwardBuffer, forwardDepth, forwardContrib;
 unsigned int postProcessFBO, postProcessBuffer, postProcessDepth;
@@ -99,15 +99,16 @@ int main(int argc, char * argv[]) {
 
 	// -- making models, making shit, fighting round the world --
 	Model nanosuit("Glitter/Resources/models/nanosuit/nanosuit.obj", true);
-	objectPositions.push_back(glm::vec3(-3.0, -3.0, -3.0));
-	objectPositions.push_back(glm::vec3(0.0, -3.0, -3.0));
-	objectPositions.push_back(glm::vec3(3.0, -3.0, -3.0));
-	objectPositions.push_back(glm::vec3(-3.0, -3.0, 0.0));
-	objectPositions.push_back(glm::vec3(0.0, -3.0, 0.0));
-	objectPositions.push_back(glm::vec3(3.0, -3.0, 0.0));
-	objectPositions.push_back(glm::vec3(-3.0, -3.0, 3.0));
-	objectPositions.push_back(glm::vec3(0.0, -3.0, 3.0));
-	objectPositions.push_back(glm::vec3(3.0, -3.0, 3.0));
+	const float offset_models = 2.0;
+	objectPositions.push_back(glm::vec3(-offset_models, -offset_models, -offset_models));
+	objectPositions.push_back(glm::vec3(0.0, -offset_models, -offset_models));
+	objectPositions.push_back(glm::vec3(offset_models, -offset_models, -offset_models));
+	objectPositions.push_back(glm::vec3(-offset_models, -offset_models, 0.0));
+	objectPositions.push_back(glm::vec3(0.0, -offset_models, 0.0));
+	objectPositions.push_back(glm::vec3(offset_models, -offset_models, 0.0));
+	objectPositions.push_back(glm::vec3(-offset_models, -offset_models, 3.0));
+	objectPositions.push_back(glm::vec3(0.0, -offset_models, offset_models));
+	objectPositions.push_back(glm::vec3(offset_models, -offset_models, offset_models));
 
 	// -- deferred rendering --
 	glGenFramebuffers(1, &gBuffer);
@@ -146,21 +147,21 @@ int main(int argc, char * argv[]) {
 	glGenTextures(1, &deferredContrib);
 	glBindTexture(GL_TEXTURE_2D, deferredContrib);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT4, GL_TEXTURE_2D, deferredContrib, 0);
 
 	// tell OpenGL which color attachments we'll use (of this framebuffer) for rendering 
-	GLuint attachments[5] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3, GL_COLOR_ATTACHMENT4 };
-	glDrawBuffers(5, attachments);
+	GLuint deferredAttachments[5] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3, GL_COLOR_ATTACHMENT4 };
+	glDrawBuffers(5, deferredAttachments);
 	
 	
 	
 	// create and attach depth buffer (renderbuffer)
-	glGenRenderbuffers(1, &rboDepth);
-	glBindRenderbuffer(GL_RENDERBUFFER, rboDepth);
+	glGenRenderbuffers(1, &deferredDepth);
+	glBindRenderbuffer(GL_RENDERBUFFER, deferredDepth);
 	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, SCR_WIDTH, SCR_HEIGHT);
-	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rboDepth);
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, deferredDepth);
 	// finally check if framebuffer is complete
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
 		std::cout << "Framebuffer not complete!" << std::endl;
@@ -289,6 +290,8 @@ int main(int argc, char * argv[]) {
 		lightColors.push_back(glm::vec3(rColor, gColor, bColor));
 	}
 
+	lightColors[5] *= 20.0f;
+
 	// shader configuration
 	// --------------------
 	shaderLightingPass.use();
@@ -296,7 +299,7 @@ int main(int argc, char * argv[]) {
 	shaderLightingPass.setInt("gNormal", 1);
 	shaderLightingPass.setInt("gAlbedoSpec", 2);
 	shaderLightingPass.setInt("gAO", 3);
-	shaderLightingPass.setInt("deferredContrib", 4);
+	//shaderLightingPass.setInt("deferredContrib", 4);
 
 	shaderSSAO.use();
 	shaderSSAO.setInt("gPosition", 0);
@@ -352,6 +355,9 @@ int main(int argc, char * argv[]) {
 			shaderGeometryPass.setMat4("model", model);
 			nanosuit.Draw(shaderGeometryPass);
 		}
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, gBuffer);
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, forwardFBO);
+		glBlitFramebuffer(0, 0, SCR_WIDTH, SCR_HEIGHT, 0, 0, SCR_WIDTH, SCR_HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 		// generate SSAO texture
@@ -381,9 +387,8 @@ int main(int argc, char * argv[]) {
 		renderQuad();
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-
+		glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
 		// lighting pass
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		shaderLightingPass.use();
 
 		// send light relevant uniforms
@@ -411,15 +416,15 @@ int main(int argc, char * argv[]) {
 		glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
 		glActiveTexture(GL_TEXTURE3);
 		glBindTexture(GL_TEXTURE_2D, ssaoBufferBlur);
-		// finally render quad
 		renderQuad();
-		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
 		// copy geometry's depth buffer to default framebuffer's depth buffer
-		glBindFramebuffer(GL_READ_FRAMEBUFFER, gBuffer);
-		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, forwardFBO);
-		glBlitFramebuffer(0, 0, SCR_WIDTH, SCR_HEIGHT, 0, 0, SCR_WIDTH, SCR_HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+		//glBindFramebuffer(GL_READ_FRAMEBUFFER, gBuffer);
+		//glBindFramebuffer(GL_DRAW_FRAMEBUFFER, forwardFBO);
+		//glBlitFramebuffer(0, 0, SCR_WIDTH, SCR_HEIGHT, 0, 0, SCR_WIDTH, SCR_HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
 		glBindFramebuffer(GL_FRAMEBUFFER, forwardFBO);
-		//glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		glClear(GL_COLOR_BUFFER_BIT);
 		// render lights on top of scene
 		shaderForward.use();
 		shaderForward.setMat4("projection", projection);
@@ -440,7 +445,7 @@ int main(int argc, char * argv[]) {
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 		glDisable(GL_DEPTH_TEST);
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		//glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		shaderPostProcess.use();
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, deferredContrib);
