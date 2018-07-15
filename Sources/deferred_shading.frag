@@ -1,4 +1,4 @@
-#version 330 core
+#version 430 core
 layout (location = 4) out vec3 deferredContrib;
 
 out vec4 FragColor;
@@ -18,7 +18,7 @@ struct Light {
     float Quadratic;
     float Radius;
 };
-const int NR_LIGHTS = 32;
+const int NR_LIGHTS = 16;
 uniform Light lights[NR_LIGHTS];
 uniform vec3 viewPos;
 
@@ -32,7 +32,7 @@ void main()
 	float AmbientOcclusion = texture(gAO, TexCoords).r;
     
     // then calculate lighting as usual
-    vec3 lighting  = Diffuse * 0.3 * AmbientOcclusion;
+    vec3 lighting  = Diffuse * 0.1 * AmbientOcclusion;
     vec3 viewDir  = normalize(viewPos - FragPos);
     for(int i = 0; i < NR_LIGHTS; ++i)
     {

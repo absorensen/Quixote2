@@ -21,7 +21,7 @@ bool firstMouse = true;
 double deltaTime = 0.0f;
 double lastFrame = 0.0;
 
-const unsigned int NR_LIGHTS = 32;
+const unsigned int NR_LIGHTS = 16;
 std::vector<glm::vec3> lightPositions;
 std::vector<glm::vec3> lightColors;
 std::vector<glm::vec3> objectPositions;
@@ -52,17 +52,15 @@ int main(int argc, char * argv[]) {
 	// ------------------------------
 	glfwInit();
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 	//glfwWindowHint(GLFW_SAMPLES, 8);
 
 #ifdef __APPLE__
-	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); // uncomment this statement to fix compilation on OS X
+	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
 
-														 // glfw window creation
-														 // --------------------
-	GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "LearnOpenGL", NULL, NULL);
+	GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Quixote", NULL, NULL);
 	if (window == NULL)
 	{
 		std::cout << "Failed to create GLFW window" << std::endl;
@@ -264,12 +262,6 @@ int main(int argc, char * argv[]) {
 	// Post-processing Buffer
 	glGenFramebuffers(1, &postProcessFBO);
 
-	glGenRenderbuffers(1, &postProcessDepth);
-	glBindRenderbuffer(GL_RENDERBUFFER, postProcessDepth);
-	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, SCR_WIDTH, SCR_HEIGHT); // use a single renderbuffer object for both a depth AND stencil buffer.
-	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, postProcessDepth);
-
-	//glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, postProcessDepth);
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
 		std::cout << "Framebuffer not complete!" << std::endl;
 
@@ -290,7 +282,14 @@ int main(int argc, char * argv[]) {
 		lightColors.push_back(glm::vec3(rColor, gColor, bColor));
 	}
 
+	lightColors[2] *= 5.0f;
+
 	lightColors[5] *= 20.0f;
+
+	lightColors[9] *= 30.0f;
+
+	lightColors[15] *= 60.0f;
+
 
 	// shader configuration
 	// --------------------
@@ -299,7 +298,6 @@ int main(int argc, char * argv[]) {
 	shaderLightingPass.setInt("gNormal", 1);
 	shaderLightingPass.setInt("gAlbedoSpec", 2);
 	shaderLightingPass.setInt("gAO", 3);
-	//shaderLightingPass.setInt("deferredContrib", 4);
 
 	shaderSSAO.use();
 	shaderSSAO.setInt("gPosition", 0);
@@ -335,8 +333,8 @@ int main(int argc, char * argv[]) {
 		lightPositions[NR_LIGHTS-2].x += lightColors[NR_LIGHTS - 2].x * (NR_LIGHTS - 2) * cos(currentFrame) * 0.01f - sin(currentFrame) * 0.03f;
 		lightPositions[NR_LIGHTS-1].z += lightColors[NR_LIGHTS - 1].z * (NR_LIGHTS - 1) * sin(currentFrame) * 0.01f;
 
-		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		//glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+		//glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		// gBuffer
 		glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
@@ -358,7 +356,7 @@ int main(int argc, char * argv[]) {
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, gBuffer);
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, forwardFBO);
 		glBlitFramebuffer(0, 0, SCR_WIDTH, SCR_HEIGHT, 0, 0, SCR_WIDTH, SCR_HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		//glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 		// generate SSAO texture
 		glBindFramebuffer(GL_FRAMEBUFFER, ssaoFBO);
@@ -375,7 +373,7 @@ int main(int argc, char * argv[]) {
 		glActiveTexture(GL_TEXTURE2);
 		glBindTexture(GL_TEXTURE_2D, noiseTexture);
 		renderQuad();
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		//glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 
 		// blur SSAO texture to remove noise
@@ -385,7 +383,7 @@ int main(int argc, char * argv[]) {
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, ssaoBuffer);
 		renderQuad();
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		//glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 		glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
 		// lighting pass
@@ -417,12 +415,8 @@ int main(int argc, char * argv[]) {
 		glActiveTexture(GL_TEXTURE3);
 		glBindTexture(GL_TEXTURE_2D, ssaoBufferBlur);
 		renderQuad();
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		//glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-		// copy geometry's depth buffer to default framebuffer's depth buffer
-		//glBindFramebuffer(GL_READ_FRAMEBUFFER, gBuffer);
-		//glBindFramebuffer(GL_DRAW_FRAMEBUFFER, forwardFBO);
-		//glBlitFramebuffer(0, 0, SCR_WIDTH, SCR_HEIGHT, 0, 0, SCR_WIDTH, SCR_HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
 		glBindFramebuffer(GL_FRAMEBUFFER, forwardFBO);
 		glClear(GL_COLOR_BUFFER_BIT);
 		// render lights on top of scene
@@ -439,11 +433,8 @@ int main(int argc, char * argv[]) {
 			shaderForward.setVec3("lightColor", lightColors[i]);
 			renderCube();
 		}
-		//glBindFramebuffer(GL_READ_FRAMEBUFFER, forwardFBO);
-		//glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-		//glBlitFramebuffer(0, 0, SCR_WIDTH, SCR_HEIGHT, 0, 0, SCR_WIDTH, SCR_HEIGHT, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		glDisable(GL_DEPTH_TEST);
 		//glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		shaderPostProcess.use();
@@ -453,36 +444,7 @@ int main(int argc, char * argv[]) {
 		glBindTexture(GL_TEXTURE_2D, forwardContrib); 
 		renderQuad();
 		glEnable(GL_DEPTH_TEST);
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-		// post process
-		//glBindFramebuffer(GL_READ_FRAMEBUFFER, forwardFBO);
-		//glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-		//glBlitFramebuffer(0, 0, SCR_WIDTH, SCR_HEIGHT, 0, 0, SCR_WIDTH, SCR_HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
-		
-
 		//glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		//glDisable(GL_DEPTH_TEST); // disable depth test so screen-space quad isn't discarded due to depth test.
-		//glBindTexture(GL_TEXTURE_2D, postProcessBuffer);
-		//glGenerateMipmap(GL_TEXTURE_2D);
-		
-		//						  // clear all relevant buffers
-		//glClearColor(1.0f, 1.0f, 1.0f, 1.0f); // set clear color to white (not really necessery actually, since we won't be able to see behind the quad anyways)
-
-		//shaderPostProcess.use();
-		//glBindTexture(GL_TEXTURE_2D, 0);
-		//glActiveTexture(GL_TEXTURE0);
-		//glBindTexture(GL_TEXTURE_2D, postProcessBuffer);
-
-		//glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
-
-		//shaderPostProcess.use();
-		//glBindVertexArray(quadVAO);
-		//glDisable(GL_DEPTH_TEST);
-		//glBindTexture(GL_TEXTURE_2D, postProcessBuffer);
-		//glDrawArrays(GL_TRIANGLES, 0, 6);
-
-
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();

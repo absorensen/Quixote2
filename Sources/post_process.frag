@@ -1,4 +1,4 @@
-#version 330 core
+#version 430 core
 out vec4 FragColor;
 
 in vec2 TexCoords;
@@ -21,20 +21,27 @@ const vec2 offsets[9] = vec2[](
         vec2( offset, -offset)  // bottom-right
     );
 
+    const float gamma = 2.2;
+	const bool edges = false;
 void main()
 {             
+	vec3 col;
+	if (edges){
+		vec3 texSamples[9];
+		for(int i = 0; i < 9; ++i){
+			texSamples[i] = vec3(texture(forwardContrib, TexCoords.st + offsets[i]));
+			texSamples[i] = length(texSamples[i]) > 0 ? texSamples[i] : texture(deferredContrib, TexCoords.st + offsets[i]).rgb;
+		}	
 
-    const float gamma = 2.2;
-//    vec3 hdrColor = texture(forwardContrib, TexCoords).rgb;
-	vec3 texSamples[9];
-	for(int i = 0; i < 9; ++i){
-		texSamples[i] = vec3(texture(forwardContrib, TexCoords.st + offsets[i]));
-		texSamples[i] = length(texSamples[i]) > 0 ? texSamples[i] : texSamples[i] + texture(deferredContrib, TexCoords.st + offsets[i]).rgb;
+		col = 8*texSamples[0];
+		for(int i = 1; i < 9; i++)
+			col += -texSamples[i];
+
+	} else {
+		col = vec3(texture(forwardContrib, TexCoords.st));
+		col = length(col) > 0 ? col : texture(deferredContrib, TexCoords.st).rgb;
 	}
-//	hdrColor = length(hdrColor) > 0 ? hdrColor : hdrColor + texture(deferredContrib, TexCoords).rgb;
-    vec3 col = -8*texSamples[0];
-    for(int i = 1; i < 9; i++)
-        col += texSamples[i];
+	
 	vec3 result = vec3(1.0) - exp(-col * exposure);
     result = pow(result, vec3(1.0 / gamma));
     FragColor = vec4(result, 1.0);

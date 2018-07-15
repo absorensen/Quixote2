@@ -1,4 +1,4 @@
-#version 330 core
+#version 430 core
 layout (location = 1) out vec3 forwardContrib;
 
 uniform vec3 lightColor;
