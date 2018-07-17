@@ -10327,3 +10327,6 @@ Vendor/bullet/data/pr2_gripper.urdf
 Debug/Glitter.exe
 Debug/Glitter.ilk
 Debug/Glitter.pdb
+*.obj
+*.tlog
+*.log

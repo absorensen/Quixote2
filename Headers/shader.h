@@ -1,3 +1,6 @@
+// based on implementation by Joey de Vries
+// url: https://learnopengl.com/Getting-started/Shaders
+
 #pragma once
 
 #ifndef SHADER_H
@@ -6,6 +9,7 @@
 #include <glad/glad.h>
 
 #include <string>
+#include <glm/glm.hpp>
 #include <fstream>
 #include <sstream>
 #include <iostream>
@@ -16,8 +20,12 @@ public:
 	// the program ID
 	unsigned int ID;
 
+	Shader() {
+
+	}
+
 	// constructor read and builds the shader
-	Shader(const char* vertexPath, const char* fragmentPath, const char* geometryPath = nullptr) {
+	Shader(std::string vertexPath, std::string fragmentPath, std::string geometryPath = "") {
 		// 1. retrieve the vertex/fragment source code from filePath
 		std::string vertexCode;
 		std::string fragmentCode;
@@ -34,8 +42,8 @@ public:
 		try
 		{
 			// open files
-			vShaderFile.open(vertexPath);
-			fShaderFile.open(fragmentPath);
+			vShaderFile.open(vertexPath.c_str());
+			fShaderFile.open(fragmentPath.c_str());
 			std::stringstream vShaderStream, fShaderStream;
 			// read file's buffer contents into stream
 			vShaderStream << vShaderFile.rdbuf();
@@ -47,7 +55,7 @@ public:
 			vertexCode = vShaderStream.str();
 			fragmentCode = fShaderStream.str();
 
-			if (geometryPath != nullptr) {
+			if (geometryPath != "") {
 				gShaderFile.open(geometryPath);
 				std::stringstream gShaderStream;
 				gShaderStream << gShaderFile.rdbuf();
@@ -83,7 +91,7 @@ public:
 		checkCompileErrors(ID, "FRAGMENT");
 
 		unsigned int geometry;
-		if (geometryPath != nullptr)
+		if (geometryPath != "")
 		{
 			const char* gShaderCode = geometryCode.c_str();
 			geometry = glCreateShader(GL_GEOMETRY_SHADER);
@@ -96,7 +104,7 @@ public:
 		ID = glCreateProgram();
 		glAttachShader(ID, vertex);
 		glAttachShader(ID, fragment);
-		if (geometryPath != nullptr) glAttachShader(ID, geometry);
+		if (geometryPath != "") glAttachShader(ID, geometry);
 		glLinkProgram(ID);
 		checkCompileErrors(ID, "PROGRAM");
 		// print linking errors if any
@@ -110,7 +118,7 @@ public:
 		// delete the shaders as they're linked into our program now and no longer necessary
 		glDeleteShader(vertex);
 		glDeleteShader(fragment);
-		if (geometryPath != nullptr) glDeleteShader(geometry);
+		if (geometryPath != "") glDeleteShader(geometry);
 	}
 
 
@@ -129,6 +137,10 @@ public:
 	void setInt(const std::string &name, int value) const
 	{
 		glUniform1i(glGetUniformLocation(ID, name.c_str()), value);
+	}
+
+	void setInt2(const std::string &name, int value1, int value2) {
+		glUniform2i(glGetUniformLocation(ID, name.c_str()), value1, value2);
 	}
 
 	void setFloat(const std::string &name, float value) const

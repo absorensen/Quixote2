@@ -1,18 +1,18 @@
+// based on implementations by 
+// Joey de Vries: https://learnopengl.com/code_viewer_gh.php?code=src/5.advanced_lighting/9.ssao/ssao.cpp
+// Joshua Senouf: https://github.com/JoshuaSenouf/GLEngine/blob/master/src/renderer/glengine.cpp
+// Kevin Fung: https://github.com/Polytonic/Glitter
+
 // Local Headers
-#include "glitter.hpp"
-
-
-// Standard Headers
-#include <cstdio>
-#include <cstdlib>
+#include "quixote.hpp"
 
 // settings
-const unsigned int SCR_WIDTH = 1280;
-const unsigned int SCR_HEIGHT = 720;
+const unsigned int SCR_WIDTH = 512;
+const unsigned int SCR_HEIGHT = 512;
 const float ASPECT_RATIO = ((float)SCR_WIDTH) / SCR_HEIGHT;
 
 // camera
-Camera camera(glm::vec3(0.0f, 1.5f, 4.0f));
+Camera camera(-2.0f, 1.5f, 3.4f, 0.0f, 1.0f, 0.0f, -50.0f, 0.0f);
 float lastX = SCR_WIDTH / 2.0f;
 float lastY = SCR_HEIGHT / 2.0f;
 bool firstMouse = true;
@@ -88,12 +88,13 @@ int main(int argc, char * argv[]) {
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS);
 
-	Shader shaderGeometryPass("Glitter/Sources/g_buffer.vert", "Glitter/Sources/g_buffer.frag");
-	Shader shaderLightingPass("Glitter/Sources/deferred_shading.vert", "Glitter/Sources/deferred_shading.frag");
-	Shader shaderSSAO("Glitter/Sources/deferred_shading.vert", "Glitter/Sources/ssao.frag");
-	Shader shaderSSAOBlur("Glitter/Sources/deferred_shading.vert", "Glitter/Sources/ssao_blur.frag");
-	Shader shaderForward("Glitter/Sources/deferred_light_box.vert", "Glitter/Sources/deferred_light_box.frag");
-	Shader shaderPostProcess("Glitter/Sources/post_process.vert", "Glitter/Sources/post_process.frag");
+	std::string path("Glitter/Sources/");
+	Shader shaderGeometryPass(path+"g_buffer.vert", path + "g_buffer.frag");
+	Shader shaderLightingPass(path + "deferred_shading.vert", path + "deferred_shading.frag");
+	Shader shaderSSAO(path + "deferred_shading.vert", path + "ssao.frag");
+	Shader shaderSSAOBlur(path + "deferred_shading.vert", path + "ssao_blur.frag");
+	Shader shaderForward(path + "deferred_light_box.vert", path + "deferred_light_box.frag");
+	Shader shaderPostProcess(path + "post_process.vert", path + "post_process.frag");
 
 	// -- making models, making shit, fighting round the world --
 	Model nanosuit("Glitter/Resources/models/nanosuit/nanosuit.obj", true);
@@ -231,12 +232,12 @@ int main(int argc, char * argv[]) {
 	glGenFramebuffers(1, &forwardFBO);
 	glBindFramebuffer(GL_FRAMEBUFFER, forwardFBO);
 
-	glGenTextures(1, &forwardBuffer);
-	glBindTexture(GL_TEXTURE_2D, forwardBuffer);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, forwardBuffer, 0);
+	//glGenTextures(1, &forwardBuffer);
+	//glBindTexture(GL_TEXTURE_2D, forwardBuffer);
+	//glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
+	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	//glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, forwardBuffer, 0);
 
 	glGenTextures(1, &forwardContrib);
 	glBindTexture(GL_TEXTURE_2D, forwardContrib);
@@ -250,7 +251,7 @@ int main(int argc, char * argv[]) {
 	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, SCR_WIDTH, SCR_HEIGHT); // use a single renderbuffer object for both a depth AND stencil buffer.
 	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, forwardDepth);
 
-	GLuint attachmentsForward[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+	GLuint attachmentsForward[2] = { GL_COLOR_ATTACHMENT1 };
 	glDrawBuffers(2, attachmentsForward);
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
 		std::cout << "Framebuffer not complete!" << std::endl;
@@ -259,11 +260,19 @@ int main(int argc, char * argv[]) {
 
 
 	// setup post process
-	// Post-processing Buffer
+	// ------------------
+	// first post-processing buffer
 	glGenFramebuffers(1, &postProcessFBO);
 
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
 		std::cout << "Framebuffer not complete!" << std::endl;
+
+	// fft for reconstruction step
+	FFT* fft = new FFT(SCR_WIDTH, SCR_HEIGHT);
+
+	// final display
+
+
 
 	// lighting info
 	// -------------
@@ -281,13 +290,9 @@ int main(int argc, char * argv[]) {
 		float bColor = 2.0f * ((rand() % 100) / 200.0f) + 0.5; // between 0.5 and 1.0
 		lightColors.push_back(glm::vec3(rColor, gColor, bColor));
 	}
-
 	lightColors[2] *= 5.0f;
-
 	lightColors[5] *= 20.0f;
-
 	lightColors[9] *= 30.0f;
-
 	lightColors[15] *= 60.0f;
 
 
@@ -449,6 +454,7 @@ int main(int argc, char * argv[]) {
 		glfwSwapBuffers(window);
 		glfwPollEvents();
 	}
+	delete fft;
 
 	glfwTerminate();
 	return EXIT_SUCCESS;

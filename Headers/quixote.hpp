@@ -1,6 +1,11 @@
+// based on implementations by 
+// Joey de Vries: https://learnopengl.com/code_viewer_gh.php?code=src/5.advanced_lighting/9.ssao/ssao.cpp
+// Joshua Senouf: https://github.com/JoshuaSenouf/GLEngine/blob/master/src/renderer/glengine.cpp
+// Kevin Fung: https://github.com/Polytonic/Glitter
+
 // Preprocessor Directives
-#ifndef GLITTER
-#define GLITTER
+#ifndef QUIXOTE_H
+#define QUIXOTE_H
 #pragma once
 
 // System Headers
@@ -13,6 +18,8 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <GLFW/glfw3.h>
 #include <random>
+#include <cstdio>
+#include <cstdlib>
 
 // Reference: https://github.com/nothings/stb/blob/master/stb_image.h#L4
 // To use stb_image, add this in *one* C++ source file.
@@ -23,6 +30,7 @@
 #include "mesh.hpp"
 #include "shader.h"
 #include "model.hpp"
+#include "fft.hpp"
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void process_input(GLFWwindow* window);
