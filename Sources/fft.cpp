@@ -30,6 +30,10 @@ int bit_reverse(int i, int N) {
 	return j;
 }
 
+void FFT::integrate_texture(unsigned int input_texture, unsigned int output_texture) {
+
+}
+
 FFT::FFT(unsigned int width, unsigned int height,
 	unsigned int input_tex, bool inv1, bool inv2)
 	: draw_input(0), current_fft(0), redrawn(false)
@@ -51,6 +55,8 @@ FFT::FFT(unsigned int width, unsigned int height,
 		stages[i] = 0;
 		while (s = s >> 1)
 			++stages[i];
+		// source of serious errors. The constants being multiplied are necessary 
+		// and need to scale with the height and width
 		butterflyI[i] = new float[2 * size[i] * stages[i] * 57];
 		butterflyWR[i] = new float[size[i] * stages[i] * 57];
 		butterflyWI[i] = new float[size[i] * stages[i] * 57];

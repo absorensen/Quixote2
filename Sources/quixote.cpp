@@ -12,7 +12,7 @@ const unsigned int SCR_HEIGHT = 512;
 const float ASPECT_RATIO = ((float)SCR_WIDTH) / SCR_HEIGHT;
 
 // camera
-Camera camera(-2.0f, 1.5f, 3.4f, 0.0f, 1.0f, 0.0f, -50.0f, 0.0f);
+Camera camera(-2.0f, 1.5f, 3.4f, 0.0f, 1.0f, 0.0f, -50.0f, -12.0f);
 float lastX = SCR_WIDTH / 2.0f;
 float lastY = SCR_HEIGHT / 2.0f;
 bool firstMouse = true;
@@ -21,28 +21,54 @@ bool firstMouse = true;
 double deltaTime = 0.0f;
 double lastFrame = 0.0;
 
+
+
+// deferred
+unsigned int gBuffer, gPosition, gNormal, gAlbedoSpec, gAO, accumulatorDepth, deferredOutput;
+
+// ssao
+unsigned int ssaoFBO, ssaoBlurFBO, ssaoBuffer, ssaoBufferBlur, noiseTexture;
+std::uniform_real_distribution<GLfloat> randomFloats(0.0, 1.0); // generates random floats between 0.0 and 1.0
+std::default_random_engine generator;
+std::vector<glm::vec3> ssaoKernel;
+std::vector<glm::vec3> ssaoNoise;
+
+// forward
+unsigned int forwardFBO, forwardBuffer, forwardDepth, forwardOutput;
+
+// first post-process stage
+unsigned int postProcessFBO, postProcessBuffer, postProcessDepth, postProcessOutput;
+bool edges = false;
+
+// reconstruction from laplacian to primary domain
+unsigned int reconstructionOutput;
+
+// output stage
+glm::vec3 gamma(1.0f / 2.2f);
+float exposure = 1.0f;
+bool reconstruction = false;
+
+// object specific
+// ---------------
+// lights
+unsigned int cubeVAO = 0;
+unsigned int cubeVBO = 0;
 const unsigned int NR_LIGHTS = 16;
 std::vector<glm::vec3> lightPositions;
 std::vector<glm::vec3> lightColors;
+const float constant = 1.0;
+const float linear = 0.7;
+const float quadratic = 1.8;
+const glm::vec3 point_lights_size(0.075f);
+
+// nanosuits
 std::vector<glm::vec3> objectPositions;
-std::vector<glm::vec3> ssaoNoise;
 
-
-
-unsigned int gBuffer, gPosition, gNormal, gAlbedoSpec, gAO, deferredDepth, deferredContrib;
-unsigned int ssaoFBO, ssaoBlurFBO, ssaoBuffer, ssaoBufferBlur;
-unsigned int forwardFBO, forwardBuffer, forwardDepth, forwardContrib;
-unsigned int postProcessFBO, postProcessBuffer, postProcessDepth;
-unsigned int noiseTexture;
-unsigned int cubeVAO = 0;
-unsigned int cubeVBO = 0;
+// screen quads
 unsigned int quadVAO = 0;
 unsigned int quadVBO;
 
 
-std::uniform_real_distribution<GLfloat> randomFloats(0.0, 1.0); // generates random floats between 0.0 and 1.0
-std::default_random_engine generator;
-std::vector<glm::vec3> ssaoKernel;
 
 
 
@@ -90,11 +116,12 @@ int main(int argc, char * argv[]) {
 
 	std::string path("Glitter/Sources/");
 	Shader shaderGeometryPass(path+"g_buffer.vert", path + "g_buffer.frag");
-	Shader shaderLightingPass(path + "deferred_shading.vert", path + "deferred_shading.frag");
-	Shader shaderSSAO(path + "deferred_shading.vert", path + "ssao.frag");
-	Shader shaderSSAOBlur(path + "deferred_shading.vert", path + "ssao_blur.frag");
-	Shader shaderForward(path + "deferred_light_box.vert", path + "deferred_light_box.frag");
-	Shader shaderPostProcess(path + "post_process.vert", path + "post_process.frag");
+	Shader shaderLightingPass(path + "simple.vert", path + "deferred_shading.frag");
+	Shader shaderSSAO(path + "simple.vert", path + "ssao.frag");
+	Shader shaderSSAOBlur(path + "simple.vert", path + "ssao_blur.frag");
+	Shader shaderForward(path + "forward.vert", path + "forward.frag");
+	Shader shaderPostProcess(path + "simple.vert", path + "post_process.frag");
+	Shader shaderOutput(path + "simple.vert", path + "output.frag");
 
 	// -- making models, making shit, fighting round the world --
 	Model nanosuit("Glitter/Resources/models/nanosuit/nanosuit.obj", true);
@@ -143,12 +170,12 @@ int main(int argc, char * argv[]) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT3, GL_TEXTURE_2D, gAO, 0);
 	// accumulator for postProcessing
-	glGenTextures(1, &deferredContrib);
-	glBindTexture(GL_TEXTURE_2D, deferredContrib);
+	glGenTextures(1, &deferredOutput);
+	glBindTexture(GL_TEXTURE_2D, deferredOutput);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT4, GL_TEXTURE_2D, deferredContrib, 0);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT4, GL_TEXTURE_2D, deferredOutput, 0);
 
 	// tell OpenGL which color attachments we'll use (of this framebuffer) for rendering 
 	GLuint deferredAttachments[5] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3, GL_COLOR_ATTACHMENT4 };
@@ -157,10 +184,10 @@ int main(int argc, char * argv[]) {
 	
 	
 	// create and attach depth buffer (renderbuffer)
-	glGenRenderbuffers(1, &deferredDepth);
-	glBindRenderbuffer(GL_RENDERBUFFER, deferredDepth);
+	glGenRenderbuffers(1, &accumulatorDepth);
+	glBindRenderbuffer(GL_RENDERBUFFER, accumulatorDepth);
 	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, SCR_WIDTH, SCR_HEIGHT);
-	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, deferredDepth);
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, accumulatorDepth);
 	// finally check if framebuffer is complete
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
 		std::cout << "Framebuffer not complete!" << std::endl;
@@ -239,40 +266,73 @@ int main(int argc, char * argv[]) {
 	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	//glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, forwardBuffer, 0);
 
-	glGenTextures(1, &forwardContrib);
-	glBindTexture(GL_TEXTURE_2D, forwardContrib);
+	glGenTextures(1, &forwardOutput);
+	glBindTexture(GL_TEXTURE_2D, forwardOutput);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, forwardContrib, 0);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, forwardOutput, 0);
 
 	glGenRenderbuffers(1, &forwardDepth);
 	glBindRenderbuffer(GL_RENDERBUFFER, forwardDepth);
 	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, SCR_WIDTH, SCR_HEIGHT); // use a single renderbuffer object for both a depth AND stencil buffer.
 	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, forwardDepth);
 
-	GLuint attachmentsForward[2] = { GL_COLOR_ATTACHMENT1 };
-	glDrawBuffers(2, attachmentsForward);
+	GLuint attachmentsForward[1] = { GL_COLOR_ATTACHMENT0 };
+	glDrawBuffers(1, attachmentsForward);
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
 		std::cout << "Framebuffer not complete!" << std::endl;
 
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 
 	// setup post process
 	// ------------------
 	// first post-processing buffer
 	glGenFramebuffers(1, &postProcessFBO);
+	glBindFramebuffer(GL_FRAMEBUFFER, postProcessFBO);
 
+	glGenTextures(1, &postProcessOutput);
+	glBindTexture(GL_TEXTURE_2D, postProcessOutput);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, postProcessOutput, 0);
+	GLuint attachmentsPostProcess[1] = { GL_COLOR_ATTACHMENT0 };
+	glDrawBuffers(1, attachmentsPostProcess);
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
 		std::cout << "Framebuffer not complete!" << std::endl;
 
-	// fft for reconstruction step
+	// reconstruction - fft
 	FFT* fft = new FFT(SCR_WIDTH, SCR_HEIGHT);
+	
+	glGenTextures(1, &reconstructionOutput);
+	glBindTexture(GL_TEXTURE_2D, reconstructionOutput);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-	// final display
 
+	// second post-processing - final display
+	//glGenFramebuffers(1, &postProcess2FBO);
+	//glBindFramebuffer(GL_FRAMEBUFFER, postProcess2FBO);
 
+	////glGenTextures(1, &postProcess2Contrib);
+	////glBindTexture(GL_TEXTURE_2D, postProcess2Contrib);
+	////glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
+	////glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	////glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	////glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, postProcess2Contrib, 0);
+	////GLuint attachmentsPostProcess2[1] = { GL_COLOR_ATTACHMENT0 };
+	//glDrawBuffers(1, attachmentsPostProcess2);
+	//if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+	//	std::cout << "Framebuffer not complete!" << std::endl;
+
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 	// lighting info
 	// -------------
@@ -312,14 +372,18 @@ int main(int argc, char * argv[]) {
 	shaderSSAOBlur.use();
 	shaderSSAOBlur.setInt("ssaoInput", 0);
 	
-	shaderForward.use();
-	shaderForward.setInt("forwardPostContrib", 0);
-
 	shaderPostProcess.use();
-	shaderPostProcess.setInt("deferredContrib", 0);
-	shaderPostProcess.setInt("forwardContrib", 1);
-	shaderPostProcess.setFloat("exposure", 1.0f);
+	shaderPostProcess.setInt("deferredOutput", 0);
+	shaderPostProcess.setInt("forwardOutput", 1);
+	shaderPostProcess.setBool("edges", edges);
 
+	shaderOutput.use();
+	shaderOutput.setInt("postProcessOutput", 0);
+	shaderOutput.setFloat("exposure", exposure);
+	shaderOutput.setVec3("gamma", gamma);
+
+	float gBufferTime, ssaoTime, deferredTime, forwardTime, postProcessTime, reconstructionTime, outputTime;
+	int report = 0;
 	// if shit doesn't show up try glm::mat4 model = glm::mat4(1.0f)
 	while (!glfwWindowShouldClose(window))
 	{
@@ -329,19 +393,11 @@ int main(int argc, char * argv[]) {
 
 		process_input(window);
 
-		for (int i = 0; i < NR_LIGHTS - 2; ++i) {
-			lightPositions[i].x += lightColors[i].x * i * cos(currentFrame) * 0.001f - tan(lastFrame * lightColors[i].z * i ) * 0.0002f;
-			lightPositions[i].y += lightColors[i].y * i * sin(currentFrame) * 0.0003f - sin(deltaTime * lightColors[i].x * i ) * 0.0001f;
-			lightPositions[i].z += lightColors[i].z * i * sin(currentFrame) * 0.001f - cos(currentFrame * lightColors[i].y * i ) * 0.0003f;
-		}
-
-		lightPositions[NR_LIGHTS-2].x += lightColors[NR_LIGHTS - 2].x * (NR_LIGHTS - 2) * cos(currentFrame) * 0.01f - sin(currentFrame) * 0.03f;
-		lightPositions[NR_LIGHTS-1].z += lightColors[NR_LIGHTS - 1].z * (NR_LIGHTS - 1) * sin(currentFrame) * 0.01f;
-
 		//glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		//glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		// gBuffer
+		gBufferTime = glfwGetTime();
 		glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
@@ -361,9 +417,11 @@ int main(int argc, char * argv[]) {
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, gBuffer);
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, forwardFBO);
 		glBlitFramebuffer(0, 0, SCR_WIDTH, SCR_HEIGHT, 0, 0, SCR_WIDTH, SCR_HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+		gBufferTime = glfwGetTime() - gBufferTime;
 		//glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 		// generate SSAO texture
+		ssaoTime = glfwGetTime();
 		glBindFramebuffer(GL_FRAMEBUFFER, ssaoFBO);
 		glClear(GL_COLOR_BUFFER_BIT);
 		shaderSSAO.use();
@@ -389,10 +447,21 @@ int main(int argc, char * argv[]) {
 		glBindTexture(GL_TEXTURE_2D, ssaoBuffer);
 		renderQuad();
 		//glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
+		ssaoTime = glfwGetTime() - ssaoTime;
+		deferredTime = glfwGetTime();
 		glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
 		// lighting pass
 		shaderLightingPass.use();
+
+		// update lighting positions
+		for (int i = 0; i < NR_LIGHTS - 2; ++i) {
+			lightPositions[i].x += lightColors[i].x * i * cos(currentFrame) * 0.001f - tan(lastFrame * lightColors[i].z * i) * 0.0002f;
+			lightPositions[i].y += lightColors[i].y * i * sin(currentFrame) * 0.0003f - sin(deltaTime * lightColors[i].x * i) * 0.0001f;
+			lightPositions[i].z += lightColors[i].z * i * sin(currentFrame) * 0.001f - cos(currentFrame * lightColors[i].y * i) * 0.0003f;
+		}
+		lightPositions[NR_LIGHTS - 2].x += lightColors[NR_LIGHTS - 2].x * (NR_LIGHTS - 2) * cos(currentFrame) * 0.01f - sin(currentFrame) * 0.03f;
+		lightPositions[NR_LIGHTS - 1].z += lightColors[NR_LIGHTS - 1].z * (NR_LIGHTS - 1) * sin(currentFrame) * 0.01f;
+
 
 		// send light relevant uniforms
 		for (unsigned int i = 0; i < lightPositions.size(); i++)
@@ -400,9 +469,6 @@ int main(int argc, char * argv[]) {
 			shaderLightingPass.setVec3("lights[" + std::to_string(i) + "].Position", glm::vec3(camera.GetViewMatrix() * glm::vec4(lightPositions[i], 1.0)));
 			shaderLightingPass.setVec3("lights[" + std::to_string(i) + "].Color", lightColors[i]);
 			// update attenuation parameters and calculate radius
-			const float constant = 1.0;
-			const float linear = 0.7;
-			const float quadratic = 1.8;
 			shaderLightingPass.setFloat("lights[" + std::to_string(i) + "].Linear", linear);
 			shaderLightingPass.setFloat("lights[" + std::to_string(i) + "].Quadratic", quadratic);
 			// then calculate radius of light volume/sphere
@@ -421,40 +487,75 @@ int main(int argc, char * argv[]) {
 		glBindTexture(GL_TEXTURE_2D, ssaoBufferBlur);
 		renderQuad();
 		//glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
+		deferredTime = glfwGetTime() - deferredTime;
+		forwardTime = glfwGetTime();
 		glBindFramebuffer(GL_FRAMEBUFFER, forwardFBO);
 		glClear(GL_COLOR_BUFFER_BIT);
 		// render lights on top of scene
 		shaderForward.use();
 		shaderForward.setMat4("projection", projection);
 		shaderForward.setMat4("view", view);
-		for (unsigned int i = 0; i < lightPositions.size(); i++)
+		for (unsigned int i = 0; i < lightPositions.size(); ++i)
 		{
 			
 			model = glm::mat4(1.0f);
 			model = glm::translate(model, lightPositions[i]);
-			model = glm::scale(model, glm::vec3(0.125f));
+			model = glm::scale(model, point_lights_size);
 			shaderForward.setMat4("model", model);
 			shaderForward.setVec3("lightColor", lightColors[i]);
 			renderCube();
 		}
-
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		forwardTime = glfwGetTime() - forwardTime;
+		postProcessTime = glfwGetTime();
+		// post processing step 1
+		glBindFramebuffer(GL_FRAMEBUFFER, postProcessFBO);
 		glDisable(GL_DEPTH_TEST);
 		//glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		shaderPostProcess.use();
+		glClear(GL_COLOR_BUFFER_BIT);
 		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, deferredContrib);
+		glBindTexture(GL_TEXTURE_2D, deferredOutput);
 		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, forwardContrib); 
+		glBindTexture(GL_TEXTURE_2D, forwardOutput); 
+		shaderPostProcess.setBool("edges", edges);
+		renderQuad();
+		postProcessTime = glfwGetTime() - postProcessTime;
+		reconstructionTime = glfwGetTime();
+		// integrate image - fft
+		if (reconstruction) {
+			//do fft
+		}
+		reconstructionTime = glfwGetTime() - reconstructionTime;
+
+
+		outputTime = glfwGetTime();
+		//// output image - post processing step 2
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		//glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		shaderOutput.use();
+		glActiveTexture(GL_TEXTURE0);
+		if(reconstruction)	glBindTexture(GL_TEXTURE_2D, reconstructionOutput);
+		else glBindTexture(GL_TEXTURE_2D, postProcessOutput);
 		renderQuad();
 		glEnable(GL_DEPTH_TEST);
+		outputTime = glfwGetTime() - outputTime;
 		//glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();
+		if (report == 60) {
+			report = 0;
+			std::cout << "gBuffer: " << gBufferTime * 1000.0f << "\n";
+			std::cout << "ssao: " << ssaoTime * 1000.0f << "\n";
+			std::cout << "deferred: " << deferredTime * 1000.0f << "\n";
+			std::cout << "forward: " << forwardTime * 1000.0f << "\n";
+			std::cout << "post processing: " << postProcessTime * 1000.0f << "\n";
+			if(reconstruction) std::cout << "reconstruction: " << reconstructionTime * 1000.0f << "\n";
+			std::cout << "output: " << outputTime * 1000.0f << "\n\n";
+		}
+		++report;
 	}
-	delete fft;
+	//delete fft;
 
 	glfwTerminate();
 	return EXIT_SUCCESS;

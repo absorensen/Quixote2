@@ -47,6 +47,7 @@ public:
 	void draw_output(float r, float g, float b, int i = 1) const;
 	void redraw_input();
 	bool newly_redrawn() const { return redrawn; }
+	void integrate_texture(unsigned int input_texture, unsigned int output_texture);
 
 private:
 	bool redrawn;

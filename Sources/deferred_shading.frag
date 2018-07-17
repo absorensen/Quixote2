@@ -1,7 +1,7 @@
 #version 430 core
-layout (location = 4) out vec3 deferredContrib;
+layout (location = 4) out vec3 deferredOutput;
 
-out vec4 FragColor;
+//out vec4 FragColor;
 
 in vec2 TexCoords;
 
@@ -55,7 +55,7 @@ void main()
             lighting += diffuse + specular;
         }
     }    
-	deferredContrib = lighting;
+	deferredOutput = lighting;
 
-    FragColor = vec4(lighting, 1.0);
+    //FragColor = vec4(lighting, 1.0);
 }
