@@ -36,8 +36,13 @@ int bit_reverse(int i, int N);
 class FFT
 {
 public:
-	FFT::FFT(unsigned int width, unsigned int height,
-		unsigned int input_tex = 0, bool inverse1 = false, bool inverse2 = false);
+
+	unsigned int integrate_texture(unsigned int input_texture);
+	FFT::FFT(unsigned int width, unsigned int height, unsigned int input_tex);
+
+
+	//FFT::FFT(unsigned int width, unsigned int height,
+	//	unsigned int input_tex = 0, bool inverse1 = false, bool inverse2 = false);
 	FFT::~FFT();
 
 	void set_input(void(*callback)()) { draw_input = callback; }
@@ -47,7 +52,6 @@ public:
 	void draw_output(float r, float g, float b, int i = 1) const;
 	void redraw_input();
 	bool newly_redrawn() const { return redrawn; }
-	void integrate_texture(unsigned int input_texture, unsigned int output_texture);
 
 private:
 	bool redrawn;
@@ -63,7 +67,7 @@ private:
 	unsigned int* imag_weights[2];
 	unsigned int disp_lists[2];
 	unsigned int fft[2];
-	unsigned int current_fft;
+	unsigned int current_fft = 1;
 	unsigned int fbo;
 	Shader fft_prog;
 	Shader input_prog[2];

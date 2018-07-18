@@ -38,15 +38,16 @@ unsigned int forwardFBO, forwardBuffer, forwardDepth, forwardOutput;
 
 // first post-process stage
 unsigned int postProcessFBO, postProcessBuffer, postProcessDepth, postProcessOutput;
-bool edges = false;
+bool edges = true;
+bool transparency = false;
 
 // reconstruction from laplacian to primary domain
 unsigned int reconstructionOutput;
 
 // output stage
-glm::vec3 gamma(1.0f / 2.2f);
+glm::vec3 gamma(1.0f / 1.8f);
 float exposure = 1.0f;
-bool reconstruction = false;
+bool reconstruction = true;
 
 // object specific
 // ---------------
@@ -56,9 +57,9 @@ unsigned int cubeVBO = 0;
 const unsigned int NR_LIGHTS = 16;
 std::vector<glm::vec3> lightPositions;
 std::vector<glm::vec3> lightColors;
-const float constant = 1.0;
-const float linear = 0.7;
-const float quadratic = 1.8;
+const float constant = 1.0f;
+const float linear = 0.7f;
+const float quadratic = 1.8f;
 const glm::vec3 point_lights_size(0.075f);
 
 // nanosuits
@@ -231,7 +232,7 @@ int main(int argc, char * argv[]) {
 		glm::vec3 sample(randomFloats(generator) * 2.0 - 1.0, randomFloats(generator) * 2.0 - 1.0, randomFloats(generator));
 		sample = glm::normalize(sample);
 		sample *= randomFloats(generator);
-		float scale = float(i) / 64.0;
+		float scale = float(i) / 64.0f;
 
 		// scale samples s.t. they're more aligned to center of kernel
 		scale = lerp(0.1f, 1.0f, scale * scale);
@@ -305,7 +306,7 @@ int main(int argc, char * argv[]) {
 		std::cout << "Framebuffer not complete!" << std::endl;
 
 	// reconstruction - fft
-	FFT* fft = new FFT(SCR_WIDTH, SCR_HEIGHT);
+	FFT* fft = new FFT(SCR_WIDTH, SCR_HEIGHT, postProcessOutput);
 	
 	glGenTextures(1, &reconstructionOutput);
 	glBindTexture(GL_TEXTURE_2D, reconstructionOutput);
@@ -340,14 +341,14 @@ int main(int argc, char * argv[]) {
 	for (unsigned int i = 0; i < NR_LIGHTS; i++)
 	{
 		// calculate slightly random offsets
-		float xPos = ((rand() % 100) / 100.0) * 6.0 - 3.0;
-		float yPos = ((rand() % 100) / 100.0) * 6.0 - 4.0;
-		float zPos = ((rand() % 100) / 100.0) * 6.0 - 3.0;
+		float xPos = ((rand() % 100) / 100.0f) * 6.0f - 3.0f;
+		float yPos = ((rand() % 100) / 100.0f) * 6.0f - 4.0f;
+		float zPos = ((rand() % 100) / 100.0f) * 6.0f - 3.0f;
 		lightPositions.push_back(glm::vec3(xPos, yPos, zPos));
 		// also calculate random color
-		float rColor = 2.0f * ((rand() % 100) / 200.0f) + 0.5; // between 0.5 and 1.0
-		float gColor = 2.0f * ((rand() % 100) / 200.0f) + 0.5; // between 0.5 and 1.0
-		float bColor = 2.0f * ((rand() % 100) / 200.0f) + 0.5; // between 0.5 and 1.0
+		float rColor = 2.0f * ((rand() % 100) / 200.0f) + 0.5f; // between 0.5 and 1.0
+		float gColor = 2.0f * ((rand() % 100) / 200.0f) + 0.5f; // between 0.5 and 1.0
+		float bColor = 2.0f * ((rand() % 100) / 200.0f) + 0.5f; // between 0.5 and 1.0
 		lightColors.push_back(glm::vec3(rColor, gColor, bColor));
 	}
 	lightColors[2] *= 5.0f;
@@ -376,20 +377,26 @@ int main(int argc, char * argv[]) {
 	shaderPostProcess.setInt("deferredOutput", 0);
 	shaderPostProcess.setInt("forwardOutput", 1);
 	shaderPostProcess.setBool("edges", edges);
+	shaderPostProcess.setBool("transparency", transparency);
 
 	shaderOutput.use();
 	shaderOutput.setInt("postProcessOutput", 0);
 	shaderOutput.setFloat("exposure", exposure);
 	shaderOutput.setVec3("gamma", gamma);
 
-	float gBufferTime, ssaoTime, deferredTime, forwardTime, postProcessTime, reconstructionTime, outputTime;
+	double gBufferTime, ssaoTime, deferredTime, forwardTime, postProcessTime, reconstructionTime, outputTime;
 	int report = 0;
+	Timer t, totalTime;
 	// if shit doesn't show up try glm::mat4 model = glm::mat4(1.0f)
 	while (!glfwWindowShouldClose(window))
 	{
-		float currentFrame = glfwGetTime();
+		totalTime.start();
+		const double currentFrame = glfwGetTime();
+		const float currentFrameFloat = (float)currentFrame;
 		deltaTime = currentFrame - lastFrame;
+		const float deltaTimeFloat = (float)deltaTime;
 		lastFrame = currentFrame;
+		const float lastFrameFloat = (float)lastFrame;
 
 		process_input(window);
 
@@ -397,7 +404,7 @@ int main(int argc, char * argv[]) {
 		//glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		// gBuffer
-		gBufferTime = glfwGetTime();
+		t.start();
 		glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
@@ -417,11 +424,12 @@ int main(int argc, char * argv[]) {
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, gBuffer);
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, forwardFBO);
 		glBlitFramebuffer(0, 0, SCR_WIDTH, SCR_HEIGHT, 0, 0, SCR_WIDTH, SCR_HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
-		gBufferTime = glfwGetTime() - gBufferTime;
+		t.stop();
+		gBufferTime = t.get_time();
 		//glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 		// generate SSAO texture
-		ssaoTime = glfwGetTime();
+		t.start();
 		glBindFramebuffer(GL_FRAMEBUFFER, ssaoFBO);
 		glClear(GL_COLOR_BUFFER_BIT);
 		shaderSSAO.use();
@@ -447,20 +455,21 @@ int main(int argc, char * argv[]) {
 		glBindTexture(GL_TEXTURE_2D, ssaoBuffer);
 		renderQuad();
 		//glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		ssaoTime = glfwGetTime() - ssaoTime;
-		deferredTime = glfwGetTime();
+		t.stop();
+		ssaoTime = t.get_time();
+		t.start();
 		glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
 		// lighting pass
 		shaderLightingPass.use();
 
 		// update lighting positions
 		for (int i = 0; i < NR_LIGHTS - 2; ++i) {
-			lightPositions[i].x += lightColors[i].x * i * cos(currentFrame) * 0.001f - tan(lastFrame * lightColors[i].z * i) * 0.0002f;
-			lightPositions[i].y += lightColors[i].y * i * sin(currentFrame) * 0.0003f - sin(deltaTime * lightColors[i].x * i) * 0.0001f;
-			lightPositions[i].z += lightColors[i].z * i * sin(currentFrame) * 0.001f - cos(currentFrame * lightColors[i].y * i) * 0.0003f;
+			lightPositions[i].x += lightColors[i].x * i * cosf(currentFrameFloat) * 0.001f - tanf(lastFrameFloat * lightColors[i].z * i) * 0.0002f;
+			lightPositions[i].y += lightColors[i].y * i * sinf(currentFrameFloat) * 0.0003f - sinf(deltaTimeFloat * lightColors[i].x * i) * 0.0001f;
+			lightPositions[i].z += lightColors[i].z * i * sinf(currentFrameFloat) * 0.001f - cosf(currentFrameFloat * lightColors[i].y * i) * 0.0003f;
 		}
-		lightPositions[NR_LIGHTS - 2].x += lightColors[NR_LIGHTS - 2].x * (NR_LIGHTS - 2) * cos(currentFrame) * 0.01f - sin(currentFrame) * 0.03f;
-		lightPositions[NR_LIGHTS - 1].z += lightColors[NR_LIGHTS - 1].z * (NR_LIGHTS - 1) * sin(currentFrame) * 0.01f;
+		lightPositions[NR_LIGHTS - 2].x += lightColors[NR_LIGHTS - 2].x * (NR_LIGHTS - 2) * cosf(currentFrameFloat) * 0.01f - sinf(currentFrameFloat) * 0.03f;
+		lightPositions[NR_LIGHTS - 1].z += lightColors[NR_LIGHTS - 1].z * (NR_LIGHTS - 1) * sinf(currentFrameFloat) * 0.01f;
 
 
 		// send light relevant uniforms
@@ -487,8 +496,9 @@ int main(int argc, char * argv[]) {
 		glBindTexture(GL_TEXTURE_2D, ssaoBufferBlur);
 		renderQuad();
 		//glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		deferredTime = glfwGetTime() - deferredTime;
-		forwardTime = glfwGetTime();
+		t.stop();
+		deferredTime = t.get_time();
+		t.start();
 		glBindFramebuffer(GL_FRAMEBUFFER, forwardFBO);
 		glClear(GL_COLOR_BUFFER_BIT);
 		// render lights on top of scene
@@ -505,11 +515,15 @@ int main(int argc, char * argv[]) {
 			shaderForward.setVec3("lightColor", lightColors[i]);
 			renderCube();
 		}
-		forwardTime = glfwGetTime() - forwardTime;
-		postProcessTime = glfwGetTime();
-		// post processing step 1
+		t.stop();
+		forwardTime = t.get_time();
+		t.start();
+
+
+		// post processing
+		// ---------------
 		glBindFramebuffer(GL_FRAMEBUFFER, postProcessFBO);
-		glDisable(GL_DEPTH_TEST);
+		//glDisable(GL_DEPTH_TEST);
 		//glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		shaderPostProcess.use();
 		glClear(GL_COLOR_BUFFER_BIT);
@@ -518,31 +532,40 @@ int main(int argc, char * argv[]) {
 		glActiveTexture(GL_TEXTURE1);
 		glBindTexture(GL_TEXTURE_2D, forwardOutput); 
 		shaderPostProcess.setBool("edges", edges);
+		shaderPostProcess.setBool("transparency", transparency);
 		renderQuad();
-		postProcessTime = glfwGetTime() - postProcessTime;
-		reconstructionTime = glfwGetTime();
+		t.stop();
+		postProcessTime = t.get_time();
+		t.start();
 		// integrate image - fft
 		if (reconstruction) {
 			//do fft
+			reconstructionOutput = fft->integrate_texture(postProcessOutput);
 		}
-		reconstructionTime = glfwGetTime() - reconstructionTime;
+		t.stop();
+		reconstructionTime = t.get_time();
+		// ---------------
 
-
-		outputTime = glfwGetTime();
-		//// output image - post processing step 2
+		// output image
+		// ---------------
+		t.start();
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		//glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		glDisable(GL_DEPTH_TEST);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		shaderOutput.use();
 		glActiveTexture(GL_TEXTURE0);
 		if(reconstruction)	glBindTexture(GL_TEXTURE_2D, reconstructionOutput);
 		else glBindTexture(GL_TEXTURE_2D, postProcessOutput);
 		renderQuad();
 		glEnable(GL_DEPTH_TEST);
-		outputTime = glfwGetTime() - outputTime;
-		//glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		t.stop();
+		outputTime = t.get_time();
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		// ---------------
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();
+		totalTime.stop();
 		if (report == 60) {
 			report = 0;
 			std::cout << "gBuffer: " << gBufferTime * 1000.0f << "\n";
@@ -551,11 +574,12 @@ int main(int argc, char * argv[]) {
 			std::cout << "forward: " << forwardTime * 1000.0f << "\n";
 			std::cout << "post processing: " << postProcessTime * 1000.0f << "\n";
 			if(reconstruction) std::cout << "reconstruction: " << reconstructionTime * 1000.0f << "\n";
-			std::cout << "output: " << outputTime * 1000.0f << "\n\n";
+			std::cout << "output: " << outputTime * 1000.0f << "\n";
+			std::cout << "total frame: " << totalTime.get_time() * 1000.0f << "\n\n";
 		}
 		++report;
 	}
-	//delete fft;
+	delete fft;
 
 	glfwTerminate();
 	return EXIT_SUCCESS;
@@ -663,8 +687,6 @@ void renderQuad()
 
 
 void process_input(GLFWwindow* window) {
-	double oldDelta = deltaTime;
-
 	// if escape was pressed, suggest closing the window
 	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
 		glfwSetWindowShouldClose(window, true);
@@ -695,8 +717,6 @@ void process_input(GLFWwindow* window) {
 		else
 			camera.ProcessKeyboard(RIGHT, deltaTime);
 	}
-
-
 }
 
 
@@ -706,23 +726,25 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
 }
 
 void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
+	const float _xpos = (float)xpos;
+	const float _ypos = (float)ypos;
 	if (firstMouse) {
-		lastX = xpos;
-		lastY = ypos;
+		lastX = _xpos;
+		lastY = _ypos;
 		firstMouse = false;
 	}
 
-	double xoffset = xpos - lastX;
-	double yoffset = lastY - ypos;
-	lastX = xpos;
-	lastY = ypos;
+	const float xoffset = _xpos - lastX;
+	const float yoffset = lastY - _ypos;
+	lastX = _xpos;
+	lastY = _ypos;
 
 	camera.ProcessMouseMovement(xoffset, yoffset);
 
 }
 
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
-	camera.ProcessMouseScroll(yoffset);
+	camera.ProcessMouseScroll((float)yoffset);
 }
 
 unsigned int loadTexture(char const * path)
@@ -735,12 +757,10 @@ unsigned int loadTexture(char const * path)
 	if (data)
 	{
 		GLenum format;
-		if (nrComponents == 1)
-			format = GL_RED;
-		else if (nrComponents == 3)
-			format = GL_RGB;
-		else if (nrComponents == 4)
-			format = GL_RGBA;
+		if (nrComponents == 1) format = GL_RED;
+		else if (nrComponents == 3)	format = GL_RGB;
+		else if (nrComponents == 4)	format = GL_RGBA;
+		else format = GL_RGB;
 
 		glBindTexture(GL_TEXTURE_2D, textureID);
 		glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);

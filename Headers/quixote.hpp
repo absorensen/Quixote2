@@ -31,6 +31,7 @@
 #include "shader.h"
 #include "model.hpp"
 #include "fft.hpp"
+#include "os_timer.h"
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void process_input(GLFWwindow* window);

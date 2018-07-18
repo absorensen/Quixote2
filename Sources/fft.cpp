@@ -30,21 +30,21 @@ int bit_reverse(int i, int N) {
 	return j;
 }
 
-void FFT::integrate_texture(unsigned int input_texture, unsigned int output_texture) {
-
+// Added by AB Sørensen
+unsigned int FFT::integrate_texture(unsigned int input_texture) {
+	do_fft();
+	return fft[current_fft];
 }
 
-FFT::FFT(unsigned int width, unsigned int height,
-	unsigned int input_tex, bool inv1, bool inv2)
-	: draw_input(0), current_fft(0), redrawn(false)
+// Added by AB Sørensen
+FFT::FFT(unsigned int width, unsigned int height, unsigned int input_tex)
 {
-	////test_glew();
-
 	//// two parallel FFTs
 	has_input_tex = glIsTexture(input_tex);
 	if (has_input_tex) fft[0] = input_tex;
-	inverse[0] = inv1;
-	inverse[1] = inv2;
+	
+	inverse[0] = false;
+	inverse[1] = false;
 
 	//// two dimensions
 	size[0] = width;
@@ -57,13 +57,13 @@ FFT::FFT(unsigned int width, unsigned int height,
 			++stages[i];
 		// source of serious errors. The constants being multiplied are necessary 
 		// and need to scale with the height and width
-		butterflyI[i] = new float[2 * size[i] * stages[i] * 57];
-		butterflyWR[i] = new float[size[i] * stages[i] * 57];
-		butterflyWI[i] = new float[size[i] * stages[i] * 57];
+		butterflyI[i] = new float[2 * size[i] * stages[i] * 64];
+		butterflyWR[i] = new float[size[i] * stages[i] * 64];
+		butterflyWI[i] = new float[size[i] * stages[i] * 64];
 		scramblers[i] = new unsigned int[stages[i]];
 		real_weights[i] = new unsigned int[stages[i]];
 		imag_weights[i] = new unsigned int[stages[i]];
-		
+
 		create_butterfly_tables(i);
 		init_textures(i);
 		init_display_lists(i);
@@ -71,6 +71,45 @@ FFT::FFT(unsigned int width, unsigned int height,
 	init_framebuffer();
 	init_shaders();
 }
+
+
+//FFT::FFT(unsigned int width, unsigned int height,
+//	unsigned int input_tex, bool inv1, bool inv2)
+//	: draw_input(0), current_fft(0), redrawn(false)
+//{
+//	////test_glew();
+//
+//	//// two parallel FFTs
+//	has_input_tex = glIsTexture(input_tex);
+//	if (has_input_tex) fft[0] = input_tex;
+//	inverse[0] = inv1;
+//	inverse[1] = inv2;
+//
+//	//// two dimensions
+//	size[0] = width;
+//	size[1] = height;
+//	for (int i = 0; i < 2; ++i)
+//	{
+//		unsigned int s = size[i];
+//		stages[i] = 0;
+//		while (s = s >> 1)
+//			++stages[i];
+//		// source of serious errors. The constants being multiplied are necessary 
+//		// and need to scale with the height and width
+//		butterflyI[i] = new float[2 * size[i] * stages[i] * 57];
+//		butterflyWR[i] = new float[size[i] * stages[i] * 57];
+//		butterflyWI[i] = new float[size[i] * stages[i] * 57];
+//		scramblers[i] = new unsigned int[stages[i]];
+//		real_weights[i] = new unsigned int[stages[i]];
+//		imag_weights[i] = new unsigned int[stages[i]];
+//		
+//		create_butterfly_tables(i);
+//		init_textures(i);
+//		init_display_lists(i);
+//	}
+//	init_framebuffer();
+//	init_shaders();
+//}
 
 FFT::~FFT()
 {
@@ -149,7 +188,7 @@ void FFT::init_textures(int d)
 	glGenTextures(stages[d], imag_weights[d]);
 	for (unsigned int i = 0; i < stages[d]; ++i)
 	{
-		init_texture(scramblers[d][i], GL_LUMINANCE_ALPHA16F_ARB, GL_LUMINANCE_ALPHA, &butterflyI[d][i * 2 * size[d]], d);
+		init_texture(scramblers[d][i], GL_LUMINANCE_ALPHA32F_ARB, GL_LUMINANCE_ALPHA, &butterflyI[d][i * 2 * size[d]], d);
 		init_texture(real_weights[d][i], GL_ALPHA32F_ARB, GL_ALPHA, &butterflyWR[d][i*size[d]], d);
 		init_texture(imag_weights[d][i], GL_ALPHA32F_ARB, GL_ALPHA, &butterflyWI[d][i*size[d]], d);
 	}
@@ -169,11 +208,11 @@ void FFT::init_framebuffer()
 		init_texture(fft[1], GL_RGBA32F_ARB, GL_RGBA, 0);
 	}
 
-	glGenFramebuffersEXT(1, &fbo);
-	glBindFramebufferEXT(GL_FRAMEBUFFER, fbo);
-	glFramebufferTexture2DEXT(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_RECTANGLE_ARB, fft[0], 0);
-	glFramebufferTexture2DEXT(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_RECTANGLE_ARB, fft[1], 0);
-	glBindFramebufferEXT(GL_FRAMEBUFFER, 0);
+	glGenFramebuffers(1, &fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_RECTANGLE_ARB, fft[0], 0);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_RECTANGLE_ARB, fft[1], 0);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void FFT::init_shaders()
@@ -266,7 +305,7 @@ void FFT::draw_quad() const
 
 void FFT::do_stage(int d, unsigned int s)
 {
-	unsigned int render_fft = !current_fft;
+	unsigned int render_fft = current_fft > 0 ? 0 : 1;
 	glDrawBuffer(GL_COLOR_ATTACHMENT0 + render_fft);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_RECTANGLE_ARB, fft[current_fft]);

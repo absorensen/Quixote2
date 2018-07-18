@@ -10,8 +10,9 @@ uniform sampler2D deferredOutput;
 uniform sampler2D forwardOutput;
 
 uniform bool edges;
+uniform bool transparency;
 
-const float offset = 1.0 / 300.0;  
+const float offset = 1.0 / 512.0;  
 
 const vec2 offsets[5] = vec2[](
         vec2( 0.0f,    0.0f),   // center-center
@@ -21,6 +22,7 @@ const vec2 offsets[5] = vec2[](
         vec2( offset,  0.0f)   // center-right
     );
 
+
 void main()
 {             
 	vec3 col;
@@ -28,7 +30,8 @@ void main()
 		vec3 texSamples[5];
 		for(int i = 0; i < 5; ++i){
 			texSamples[i] = vec3(texture(forwardOutput, TexCoords.st + offsets[i]));
-			texSamples[i] = texSamples[i].x > 0 && texSamples[i].y > 0 && texSamples[i].z > 0 ? texSamples[i] + texSamples[i] * texture(deferredOutput, TexCoords.st + offsets[i]).rgb : texture(deferredOutput, TexCoords.st + offsets[i]).rgb;
+			if(transparency) texSamples[i] = texSamples[i].x > 0 && texSamples[i].y > 0 && texSamples[i].z > 0 ? texSamples[i] + texSamples[i] * texture(deferredOutput, TexCoords.st + offsets[i]).rgb : texture(deferredOutput, TexCoords.st + offsets[i]).rgb;
+			else texSamples[i] = texSamples[i].x > 0 && texSamples[i].y > 0 && texSamples[i].z > 0 ? texSamples[i] : texture(deferredOutput, TexCoords.st + offsets[i]).rgb;
 		}	
 
 		col = 4*texSamples[0];
@@ -37,7 +40,8 @@ void main()
 
 	} else {
 		col = vec3(texture(forwardOutput, TexCoords.st));
-		col = col.x > 0 && col.y > 0 && col.z > 0 ? col + col * texture(deferredOutput, TexCoords.st).rgb : texture(deferredOutput, TexCoords.st).rgb;
+		if(transparency) col = col.x > 0 && col.y > 0 && col.z > 0 ? col + col * texture(deferredOutput, TexCoords.st).rgb : texture(deferredOutput, TexCoords.st).rgb;
+		else col = col.x > 0 && col.y > 0 && col.z > 0 ? col + col * texture(deferredOutput, TexCoords.st).rgb : texture(deferredOutput, TexCoords.st).rgb;
 	}
 	postProcessOutput = col;
 //	FragColor = vec4(col, 1.0);
