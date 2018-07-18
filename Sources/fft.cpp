@@ -32,6 +32,9 @@ int bit_reverse(int i, int N) {
 
 // Added by AB Sørensen
 unsigned int FFT::integrate_texture(unsigned int input_texture) {
+	has_input_tex = glIsTexture(input_texture);
+	if (has_input_tex) fft[0] = input_texture;
+	redraw_input();
 	do_fft();
 	return fft[current_fft];
 }
@@ -40,6 +43,7 @@ unsigned int FFT::integrate_texture(unsigned int input_texture) {
 FFT::FFT(unsigned int width, unsigned int height, unsigned int input_tex)
 {
 	//// two parallel FFTs
+	current_fft = 0;
 	has_input_tex = glIsTexture(input_tex);
 	if (has_input_tex) fft[0] = input_tex;
 	

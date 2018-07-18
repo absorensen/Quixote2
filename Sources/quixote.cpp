@@ -10,6 +10,7 @@
 const unsigned int SCR_WIDTH = 512;
 const unsigned int SCR_HEIGHT = 512;
 const float ASPECT_RATIO = ((float)SCR_WIDTH) / SCR_HEIGHT;
+static const float scale = 1.0f / static_cast<float>(SCR_WIDTH);
 
 // camera
 Camera camera(-2.0f, 1.5f, 3.4f, 0.0f, 1.0f, 0.0f, -50.0f, -12.0f);
@@ -43,6 +44,8 @@ bool transparency = false;
 
 // reconstruction from laplacian to primary domain
 unsigned int reconstructionOutput;
+unsigned int source_list;
+Shader g2r_prog;
 
 // output stage
 glm::vec3 gamma(1.0f / 1.8f);
@@ -123,6 +126,7 @@ int main(int argc, char * argv[]) {
 	Shader shaderForward(path + "forward.vert", path + "forward.frag");
 	Shader shaderPostProcess(path + "simple.vert", path + "post_process.frag");
 	Shader shaderOutput(path + "simple.vert", path + "output.frag");
+	g2r_prog = Shader(path+ "fft_texcoord.vert", path + "fft_g2r.frag");
 
 	// -- making models, making shit, fighting round the world --
 	Model nanosuit("Glitter/Resources/models/nanosuit/nanosuit.obj", true);
@@ -315,6 +319,27 @@ int main(int argc, char * argv[]) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+	source_list = glGenLists(1);
+	glNewList(source_list, GL_COMPILE);
+
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, postProcessOutput);
+	glBegin(GL_POLYGON);
+	glTexCoord2f(0.0f, 0.0f);
+	glVertex2f(-1.0f, -1.0f);
+	glTexCoord2f(1.0f, 0.0f);
+	glVertex2f(1.0f, -1.0f);
+	glTexCoord2f(1.0f, 1.0f);
+	glVertex2f(1.0f, 1.0f);
+	glTexCoord2f(0.0f, 1.0f);
+	glVertex2f(-1.0f, 1.0f);
+	glEnd();
+	glDisable(GL_TEXTURE_2D);
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, 0);
+
+	glEndList();
 
 
 	// second post-processing - final display
@@ -539,8 +564,26 @@ int main(int argc, char * argv[]) {
 		t.start();
 		// integrate image - fft
 		if (reconstruction) {
-			//do fft
-			reconstructionOutput = fft->integrate_texture(postProcessOutput);
+			//do fft (what it should be)
+			//reconstructionOutput = fft->integrate_texture(postProcessOutput);
+
+
+			fft->set_input(draw_fft_source_rb);
+			fft->do_fft();
+
+			glBlendFunc(GL_ONE, GL_ONE);
+			glEnable(GL_BLEND);
+			fft->draw_output(scale, 0.0f, 0.0f, 1);
+			fft->draw_output(0.0f, 0.0f, scale, 2);
+			glDisable(GL_BLEND);
+
+			fft->set_input(draw_fft_source_g);
+			fft->redraw_input();
+			fft->do_fft();
+
+			glEnable(GL_BLEND);
+			fft->draw_output(0.0f, scale, 0.0f);
+			glDisable(GL_BLEND);
 		}
 		t.stop();
 		reconstructionTime = t.get_time();
@@ -551,6 +594,7 @@ int main(int argc, char * argv[]) {
 		t.start();
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		glDisable(GL_DEPTH_TEST);
+		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		shaderOutput.use();
 		glActiveTexture(GL_TEXTURE0);
@@ -583,6 +627,39 @@ int main(int argc, char * argv[]) {
 
 	glfwTerminate();
 	return EXIT_SUCCESS;
+}
+
+void set_projection()
+{
+	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();
+	glOrtho(-1.0, 1.0, -1.0, 1.0, -1.0, 1.0);
+	glMatrixMode(GL_MODELVIEW);
+}
+
+void draw_fft_source_rb()
+{
+	glClearColor(0.0, 0.0, 0.0, 0.0);
+	glClear(GL_COLOR_BUFFER_BIT);
+	set_projection();
+	glLoadIdentity();
+
+	glColor3f(1.0f, 0.0f, 1.0f);
+	glCallList(source_list);
+}
+
+void draw_fft_source_g()
+{
+	glClearColor(0.0, 0.0, 0.0, 0.0);
+	glClear(GL_COLOR_BUFFER_BIT);
+	set_projection();
+	glLoadIdentity();
+
+	glUseProgram(g2r_prog.ID);
+	glEnable(GL_TEXTURE_2D);
+	glCallList(source_list);
+	glDisable(GL_TEXTURE_2D);
+	glUseProgram(0);
 }
 
 

@@ -67,7 +67,7 @@ private:
 	unsigned int* imag_weights[2];
 	unsigned int disp_lists[2];
 	unsigned int fft[2];
-	unsigned int current_fft = 1;
+	unsigned int current_fft;
 	unsigned int fbo;
 	Shader fft_prog;
 	Shader input_prog[2];

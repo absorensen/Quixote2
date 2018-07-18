@@ -41,6 +41,10 @@ unsigned int loadTexture(char const * path);
 void renderCube();
 void renderQuad();
 
+void draw_fft_source_g();
+void draw_fft_source_rb();
+void set_projection();
+
 float lerp(float a, float b, float f)
 {
 	return a + f * (b - a);
