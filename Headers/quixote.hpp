@@ -20,6 +20,7 @@
 #include <random>
 #include <cstdio>
 #include <cstdlib>
+#include <omp.h>
 
 // Reference: https://github.com/nothings/stb/blob/master/stb_image.h#L4
 // To use stb_image, add this in *one* C++ source file.
@@ -30,8 +31,8 @@
 #include "mesh.hpp"
 #include "shader.h"
 #include "model.hpp"
-#include "fft.hpp"
 #include "os_timer.h"
+#include "reconstructor.hpp"
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void process_input(GLFWwindow* window);
@@ -41,9 +42,9 @@ unsigned int loadTexture(char const * path);
 void renderCube();
 void renderQuad();
 
-void draw_fft_source_g();
-void draw_fft_source_rb();
-void set_projection();
+//void draw_fft_source_g();
+//void draw_fft_source_rb();
+//void set_projection();
 
 float lerp(float a, float b, float f)
 {

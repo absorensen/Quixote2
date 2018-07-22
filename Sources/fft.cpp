@@ -20,7 +20,7 @@
 #include "fft.hpp";
 
 
-int bit_reverse(int i, int N) {
+int FFT::bit_reverse(int i, int N) {
 	int j = 0;
 	while (N = N >> 1)
 	{
@@ -31,26 +31,71 @@ int bit_reverse(int i, int N) {
 }
 
 // Added by AB Sørensen
-unsigned int FFT::integrate_texture(unsigned int input_texture) {
-	has_input_tex = glIsTexture(input_texture);
-	if (has_input_tex) fft[0] = input_texture;
+void FFT::integrate_texture(unsigned int input_texture_rb, unsigned int input_texture_g, void(*callback1)(), void(*callback2)(), unsigned int &output_rb, unsigned int &output_g) {
+	static const float scale = 1.0f / static_cast<float>(512);
+	set_input(callback1);
+	do_fft();
+
+	glBlendFunc(GL_ONE, GL_ONE);
+	glEnable(GL_BLEND);
+	draw_output(scale, 0.0f, 0.0f, 1);
+	draw_output(0.0f, 0.0f, scale, 2);
+	glDisable(GL_BLEND);
+
+	set_input(callback2);
 	redraw_input();
 	do_fft();
-	return fft[current_fft];
+
+	glEnable(GL_BLEND);
+	draw_output(0.0f, scale, 0.0f);
+	glDisable(GL_BLEND);
+
+
+
+//	glCopyImageSubData(input_texture_rb, GL_TEXTURE_2D, 0, 0, 0, 0,
+//		input_texture, GL_TEXTURE_2D, 0, 0, 0, 0,
+//		size[0], size[1], 1);
+//	// rb step
+//	has_input_tex = glIsTexture(input_texture);
+//	if (has_input_tex) fft[0] = input_texture;
+//	//set_input(callback1);
+//	redraw_input();
+//	do_fft();
+//	glCopyImageSubData(fft[current_fft], GL_TEXTURE_2D, 0, 0, 0, 0,
+//						output_rb, GL_TEXTURE_2D, 0, 0, 0, 0,
+//						size[0], size[1], 1);
+////	output_rb = output_texture;
+//	//output_rb = fft[current_fft];
+//
+//
+//	// g step
+//	glCopyImageSubData(input_texture_g, GL_TEXTURE_2D, 0, 0, 0, 0,
+//		input_texture, GL_TEXTURE_2D, 0, 0, 0, 0,
+//		size[0], size[1], 1);
+//	has_input_tex = glIsTexture(input_texture_g);
+//	if (has_input_tex) fft[0] = input_texture_g;
+//	//set_input(callback2);
+//	redraw_input();
+//	do_fft();
+//	glCopyImageSubData(fft[current_fft], GL_TEXTURE_2D, 0, 0, 0, 0,
+//						output_g, GL_TEXTURE_2D, 0, 0, 0, 0,
+//						size[0], size[1], 1);
+//	//output_g = fft[current_fft];
+
+	return;
 }
 
 // Added by AB Sørensen
 FFT::FFT(unsigned int width, unsigned int height, unsigned int input_tex)
+	: draw_input(0), current_fft(0), redrawn(false)
 {
-	//// two parallel FFTs
-	current_fft = 0;
+	// Two parallel FFTs
 	has_input_tex = glIsTexture(input_tex);
 	if (has_input_tex) fft[0] = input_tex;
-	
-	inverse[0] = false;
-	inverse[1] = false;
+	inverse[0] = true;
+	inverse[1] = true;
 
-	//// two dimensions
+	// Two dimensions
 	size[0] = width;
 	size[1] = height;
 	for (int i = 0; i < 2; ++i)
@@ -59,21 +104,38 @@ FFT::FFT(unsigned int width, unsigned int height, unsigned int input_tex)
 		stages[i] = 0;
 		while (s = s >> 1)
 			++stages[i];
-		// source of serious errors. The constants being multiplied are necessary 
-		// and need to scale with the height and width
 		butterflyI[i] = new float[2 * size[i] * stages[i] * 64];
 		butterflyWR[i] = new float[size[i] * stages[i] * 64];
 		butterflyWI[i] = new float[size[i] * stages[i] * 64];
 		scramblers[i] = new unsigned int[stages[i]];
 		real_weights[i] = new unsigned int[stages[i]];
 		imag_weights[i] = new unsigned int[stages[i]];
-
 		create_butterfly_tables(i);
 		init_textures(i);
 		init_display_lists(i);
 	}
 	init_framebuffer();
 	init_shaders();
+
+	// initialize intermediate texture so two different textures can be output
+	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	glGenTextures(1, &output_texture);
+	glBindTexture(GL_TEXTURE_2D, output_texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, output_texture, 0);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	// initialize intermediate texture so two different textures can be output
+	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	glGenTextures(1, &input_texture);
+	glBindTexture(GL_TEXTURE_2D, input_texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, input_texture, 0);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 
@@ -309,8 +371,8 @@ void FFT::draw_quad() const
 
 void FFT::do_stage(int d, unsigned int s)
 {
-	unsigned int render_fft = current_fft > 0 ? 0 : 1;
-	glDrawBuffer(GL_COLOR_ATTACHMENT0 + render_fft);
+	unsigned int render_fft = !current_fft;
+	glDrawBuffer(GL_COLOR_ATTACHMENT0_EXT + render_fft);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_RECTANGLE_ARB, fft[current_fft]);
 

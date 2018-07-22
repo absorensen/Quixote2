@@ -3,7 +3,7 @@ out vec4 FragColor;
 
 in vec2 TexCoords;
 
-uniform sampler2D postProcessOutput;
+uniform sampler2D reconstruction_output;
 
 uniform float exposure;
 uniform vec3 gamma;
@@ -24,9 +24,7 @@ vec3 GammaCorrect(vec3 color);
 
 void main()
 {   
-	// input sample
-	vec3 color = texture(postProcessOutput, TexCoords.st).rgb;
-
+	vec3 color = texture(reconstruction_output, TexCoords).rgb;
 	if(uncharted_tonemap){
 		color = UnchartedTonemap(color);
 		vec3 whiteScale = 1.0f / UnchartedTonemap(vec3(W));

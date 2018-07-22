@@ -32,19 +32,19 @@
 #include <iostream>
 #include <cmath>    
 
-int bit_reverse(int i, int N);
+
 class FFT
 {
 public:
 
-	unsigned int integrate_texture(unsigned int input_texture);
+	void FFT::integrate_texture(unsigned int input_texture_rb, unsigned int input_texture_g, void(*callback1)(), void(*callback2)(), unsigned int &output_rb, unsigned int &output_g);
 	FFT::FFT(unsigned int width, unsigned int height, unsigned int input_tex);
 
 
 	//FFT::FFT(unsigned int width, unsigned int height,
 	//	unsigned int input_tex = 0, bool inverse1 = false, bool inverse2 = false);
 	FFT::~FFT();
-
+	int bit_reverse(int i, int N);
 	void set_input(void(*callback)()) { draw_input = callback; }
 	void invert(int i = 1);
 	void do_fft();
@@ -69,6 +69,8 @@ private:
 	unsigned int fft[2];
 	unsigned int current_fft;
 	unsigned int fbo;
+	unsigned int output_texture;
+	unsigned int input_texture;
 	Shader fft_prog;
 	Shader input_prog[2];
 	Shader disp_prog[2];

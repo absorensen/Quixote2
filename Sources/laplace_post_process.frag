@@ -1,7 +1,9 @@
 #version 430 core
-layout (location = 0) out vec3 postProcessOutput;
+layout (location = 0) out vec3 reconstructionPostProcessOut;
+//layout (location = 0) out vec3 reconstructionPostProcessOutRB;
+//layout (location = 1) out vec3 reconstructionPostProcessOutG;
 
-//out vec4 FragColor;
+out vec4 FragColor;
 
 
 in vec2 TexCoords;
@@ -46,6 +48,9 @@ void main()
 		if(transparency) col = col.x > 0 && col.y > 0 && col.z > 0 ? col + col * deferred : deferred;
 		else col = col.x > 0 && col.y > 0 && col.z > 0 ? col + col * deferred : deferred;
 	}
-	postProcessOutput = col;
-//	FragColor = vec4(col, 1.0);
+	col.x = col.x > 0.0 ? col.x : 0.0;
+	col.y = col.y > 0.0 ? col.y : 0.0;
+	col.z = col.z > 0.0 ? col.z : 0.0;
+	reconstructionPostProcessOut = col;
+	FragColor = vec4(col, 1.0);
 }

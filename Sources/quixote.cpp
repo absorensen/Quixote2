@@ -37,20 +37,27 @@ std::vector<glm::vec3> ssaoNoise;
 // forward
 unsigned int forwardFBO, forwardBuffer, forwardDepth, forwardOutput;
 
-// first post-process stage
-unsigned int postProcessFBO, postProcessBuffer, postProcessDepth, postProcessOutput;
-bool edges = true;
-bool transparency = false;
 
-// reconstruction from laplacian to primary domain
-unsigned int reconstructionOutput;
-unsigned int source_list;
-Shader g2r_prog;
+// switch between primary and laplacian domain post processing pipelines
+bool laplace_pipeline = true;
+
+// post-process
+unsigned int postProcessFBO, postProcessBuffer, postProcessDepth, postProcessOutput;
+bool post_process_edges = false;
+bool post_process_transparency = true;
+
+// reconstruction
+unsigned int laplacePostProcessFBO, laplaceProcessBuffer, laplacePostProcessDepth, laplacePostProcessOutput, laplaceReconstructionOutput;
+bool laplace_edges = true;
+bool laplace_transparency = true;
+//unsigned int source_list;
+//Shader g2r_prog;
 
 // output stage
-glm::vec3 gamma(1.0f / 1.8f);
+glm::vec3 gamma(1.0f / 2.2f);
 float exposure = 1.0f;
-bool reconstruction = true;
+bool uncharted_tonemap = true;
+bool print_timing = false;
 
 // object specific
 // ---------------
@@ -63,7 +70,7 @@ std::vector<glm::vec3> lightColors;
 const float constant = 1.0f;
 const float linear = 0.7f;
 const float quadratic = 1.8f;
-const glm::vec3 point_lights_size(0.075f);
+const glm::vec3 point_lights_size(0.0175f);
 
 // nanosuits
 std::vector<glm::vec3> objectPositions;
@@ -112,11 +119,12 @@ int main(int argc, char * argv[]) {
 		std::cout << "Failed to initialize GLAD" << std::endl;
 		return -1;
 	}
-
 	// configure global opengl state
 	// -----------------------------
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS);
+
+	Reconstructor* reconstructor = new Reconstructor(SCR_WIDTH, SCR_HEIGHT, 1, GL_RGBA, CONV_PYR_CPU);
 
 	std::string path("Glitter/Sources/");
 	Shader shaderGeometryPass(path+"g_buffer.vert", path + "g_buffer.frag");
@@ -124,9 +132,16 @@ int main(int argc, char * argv[]) {
 	Shader shaderSSAO(path + "simple.vert", path + "ssao.frag");
 	Shader shaderSSAOBlur(path + "simple.vert", path + "ssao_blur.frag");
 	Shader shaderForward(path + "forward.vert", path + "forward.frag");
+
+	// postprocessing path 1 - if reconstruction==false
 	Shader shaderPostProcess(path + "simple.vert", path + "post_process.frag");
 	Shader shaderOutput(path + "simple.vert", path + "output.frag");
-	g2r_prog = Shader(path+ "fft_texcoord.vert", path + "fft_g2r.frag");
+	
+	// postprocessing path 2 - if reconstruction==true
+	Shader shaderLaplacePostProcess(path + "simple.vert", path + "laplace_post_process.frag");
+	Shader shaderLaplaceReconstructionOutput(path + "simple.vert", path + "laplace_reconstruction_output.frag");
+	
+	//g2r_prog = Shader(path+ "fft_texcoord.vert", path + "fft_g2r.frag");
 
 	// -- making models, making shit, fighting round the world --
 	Model nanosuit("Glitter/Resources/models/nanosuit/nanosuit.obj", true);
@@ -309,53 +324,37 @@ int main(int argc, char * argv[]) {
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
 		std::cout << "Framebuffer not complete!" << std::endl;
 
-	// reconstruction - fft
-	FFT* fft = new FFT(SCR_WIDTH, SCR_HEIGHT, postProcessOutput);
-	
-	glGenTextures(1, &reconstructionOutput);
-	glBindTexture(GL_TEXTURE_2D, reconstructionOutput);
+	// setup reconstruction post processing
+	// ------------------------------------
+	glGenFramebuffers(1, &laplacePostProcessFBO);
+	glBindFramebuffer(GL_FRAMEBUFFER, laplacePostProcessFBO);
+
+	glGenTextures(1, &laplacePostProcessOutput);
+	glBindTexture(GL_TEXTURE_2D, laplacePostProcessOutput);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, laplacePostProcessOutput, 0);
 
-	source_list = glGenLists(1);
-	glNewList(source_list, GL_COMPILE);
+	GLuint attachmentsReconstruction[1] = { GL_COLOR_ATTACHMENT0 };
+	glDrawBuffers(1, attachmentsReconstruction);
 
-	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-	glEnable(GL_TEXTURE_2D);
-	glBindTexture(GL_TEXTURE_2D, postProcessOutput);
-	glBegin(GL_POLYGON);
-	glTexCoord2f(0.0f, 0.0f);
-	glVertex2f(-1.0f, -1.0f);
-	glTexCoord2f(1.0f, 0.0f);
-	glVertex2f(1.0f, -1.0f);
-	glTexCoord2f(1.0f, 1.0f);
-	glVertex2f(1.0f, 1.0f);
-	glTexCoord2f(0.0f, 1.0f);
-	glVertex2f(-1.0f, 1.0f);
-	glEnd();
-	glDisable(GL_TEXTURE_2D);
-	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, 0);
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+		std::cout << "Framebuffer not complete!" << std::endl;
 
-	glEndList();
+	// reconstruction - fft
+	//FFT* fft = new FFT(SCR_WIDTH, SCR_HEIGHT, reconstructionPostProcessOutput);
+	//FFT* fft = new FFT(SCR_WIDTH, SCR_HEIGHT);
 
-
-	// second post-processing - final display
-	//glGenFramebuffers(1, &postProcess2FBO);
-	//glBindFramebuffer(GL_FRAMEBUFFER, postProcess2FBO);
-
-	////glGenTextures(1, &postProcess2Contrib);
-	////glBindTexture(GL_TEXTURE_2D, postProcess2Contrib);
-	////glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
-	////glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	////glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	////glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, postProcess2Contrib, 0);
-	////GLuint attachmentsPostProcess2[1] = { GL_COLOR_ATTACHMENT0 };
-	//glDrawBuffers(1, attachmentsPostProcess2);
-	//if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-	//	std::cout << "Framebuffer not complete!" << std::endl;
+	glGenTextures(1, &laplaceReconstructionOutput);
+	glBindTexture(GL_TEXTURE_2D, laplaceReconstructionOutput);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -398,21 +397,37 @@ int main(int argc, char * argv[]) {
 	shaderSSAOBlur.use();
 	shaderSSAOBlur.setInt("ssaoInput", 0);
 	
-	shaderPostProcess.use();
-	shaderPostProcess.setInt("deferredOutput", 0);
-	shaderPostProcess.setInt("forwardOutput", 1);
-	shaderPostProcess.setBool("edges", edges);
-	shaderPostProcess.setBool("transparency", transparency);
+	//if (reconstruction) {
+		shaderLaplacePostProcess.use();
+		shaderLaplacePostProcess.setInt("deferredOutput", 0);
+		shaderLaplacePostProcess.setInt("forwardOutput", 1);
+		shaderLaplacePostProcess.setBool("edges", laplace_edges);
+		shaderLaplacePostProcess.setBool("transparency", laplace_transparency);
 
-	shaderOutput.use();
-	shaderOutput.setInt("postProcessOutput", 0);
-	shaderOutput.setFloat("exposure", exposure);
-	shaderOutput.setVec3("gamma", gamma);
+		shaderLaplaceReconstructionOutput.use();
+		shaderLaplaceReconstructionOutput.setInt("reconstruction_output", 0);
+		shaderLaplaceReconstructionOutput.setFloat("exposure", exposure);
+		shaderLaplaceReconstructionOutput.setVec3("gamma", gamma);
+		shaderLaplaceReconstructionOutput.setBool("uncharted_tonemap", uncharted_tonemap);
+	/*}
+	else {*/
+		shaderPostProcess.use();
+		shaderPostProcess.setInt("deferredOutput", 0);
+		shaderPostProcess.setInt("forwardOutput", 1);
+		shaderPostProcess.setBool("edges", post_process_edges);
+		shaderPostProcess.setBool("transparency", post_process_transparency);
 
+		shaderOutput.use();
+		shaderOutput.setInt("postProcessOutput", 0);
+		shaderOutput.setFloat("exposure", exposure);
+		shaderOutput.setVec3("gamma", gamma);
+		shaderOutput.setBool("uncharted_tonemap", uncharted_tonemap);
+	//}
 	double gBufferTime, ssaoTime, deferredTime, forwardTime, postProcessTime, reconstructionTime, outputTime;
 	int report = 0;
 	Timer t, totalTime;
 	// if shit doesn't show up try glm::mat4 model = glm::mat4(1.0f)
+
 	while (!glfwWindowShouldClose(window))
 	{
 		totalTime.start();
@@ -425,12 +440,13 @@ int main(int argc, char * argv[]) {
 
 		process_input(window);
 
-		//glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-		//glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		// gBuffer
 		t.start();
 		glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
+		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
 		glm::mat4 view = camera.GetViewMatrix();
@@ -544,124 +560,99 @@ int main(int argc, char * argv[]) {
 		forwardTime = t.get_time();
 		t.start();
 
+		if (laplace_pipeline) {
+			// post processing
+			// ---------------
+			glBindFramebuffer(GL_FRAMEBUFFER, laplacePostProcessFBO);
+			glDisable(GL_DEPTH_TEST);
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+			glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
+			shaderLaplacePostProcess.use();
+			glClear(GL_COLOR_BUFFER_BIT);
+			glActiveTexture(GL_TEXTURE0);
+			glBindTexture(GL_TEXTURE_2D, deferredOutput);
+			glActiveTexture(GL_TEXTURE1);
+			glBindTexture(GL_TEXTURE_2D, forwardOutput);
+			shaderLaplacePostProcess.setBool("edges", laplace_edges);
+			shaderLaplacePostProcess.setBool("transparency", laplace_transparency);
+			renderQuad();
 
-		// post processing
-		// ---------------
-		glBindFramebuffer(GL_FRAMEBUFFER, postProcessFBO);
-		//glDisable(GL_DEPTH_TEST);
-		//glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-		shaderPostProcess.use();
-		glClear(GL_COLOR_BUFFER_BIT);
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, deferredOutput);
-		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, forwardOutput); 
-		shaderPostProcess.setBool("edges", edges);
-		shaderPostProcess.setBool("transparency", transparency);
-		renderQuad();
+			// reconstruct gradients
+			// ---------------------
+			// input none, but reads pixels from bound framebuffer
+			// output laplaceReconstructionOutput
+			reconstructor->reconstruct_from_gradients(laplaceReconstructionOutput);
+
+
+			// output
+			// ------
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+			glDisable(GL_DEPTH_TEST);
+			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+			shaderLaplaceReconstructionOutput.use();
+			shaderLaplaceReconstructionOutput.setBool("uncharted_tonemap", uncharted_tonemap);
+			glActiveTexture(GL_TEXTURE0);
+			glBindTexture(GL_TEXTURE_2D, laplaceReconstructionOutput);
+			renderQuad();
+			glEnable(GL_DEPTH_TEST);
+
+		}
+		else {
+			// post processing
+			// ---------------
+			glBindFramebuffer(GL_FRAMEBUFFER, postProcessFBO);
+			//glDisable(GL_DEPTH_TEST);
+			//glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+			shaderPostProcess.use();
+			glClear(GL_COLOR_BUFFER_BIT);
+			glActiveTexture(GL_TEXTURE0);
+			glBindTexture(GL_TEXTURE_2D, deferredOutput);
+			glActiveTexture(GL_TEXTURE1);
+			glBindTexture(GL_TEXTURE_2D, forwardOutput);
+			shaderPostProcess.setBool("edges", post_process_edges);
+			shaderPostProcess.setBool("transparency", post_process_transparency);
+			renderQuad();
+
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+			glDisable(GL_DEPTH_TEST);
+			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+			shaderOutput.use();
+			shaderOutput.setBool("uncharted_tonemap", uncharted_tonemap);
+			glActiveTexture(GL_TEXTURE0);
+			glBindTexture(GL_TEXTURE_2D, postProcessOutput);
+			renderQuad();
+			glEnable(GL_DEPTH_TEST);
+		}
+
+		
 		t.stop();
 		postProcessTime = t.get_time();
-		t.start();
-		// integrate image - fft
-		if (reconstruction) {
-			//do fft (what it should be)
-			//reconstructionOutput = fft->integrate_texture(postProcessOutput);
-
-
-			fft->set_input(draw_fft_source_rb);
-			fft->do_fft();
-
-			glBlendFunc(GL_ONE, GL_ONE);
-			glEnable(GL_BLEND);
-			fft->draw_output(scale, 0.0f, 0.0f, 1);
-			fft->draw_output(0.0f, 0.0f, scale, 2);
-			glDisable(GL_BLEND);
-
-			fft->set_input(draw_fft_source_g);
-			fft->redraw_input();
-			fft->do_fft();
-
-			glEnable(GL_BLEND);
-			fft->draw_output(0.0f, scale, 0.0f);
-			glDisable(GL_BLEND);
-		}
-		t.stop();
-		reconstructionTime = t.get_time();
-		// ---------------
-
-		// output image
-		// ---------------
-		t.start();
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		glDisable(GL_DEPTH_TEST);
-		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-		shaderOutput.use();
-		glActiveTexture(GL_TEXTURE0);
-		if(reconstruction)	glBindTexture(GL_TEXTURE_2D, reconstructionOutput);
-		else glBindTexture(GL_TEXTURE_2D, postProcessOutput);
-		renderQuad();
-		glEnable(GL_DEPTH_TEST);
-		t.stop();
-		outputTime = t.get_time();
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		// ---------------
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();
 		totalTime.stop();
-		if (report == 60) {
-			report = 0;
-			std::cout << "gBuffer: " << gBufferTime * 1000.0f << "\n";
-			std::cout << "ssao: " << ssaoTime * 1000.0f << "\n";
-			std::cout << "deferred: " << deferredTime * 1000.0f << "\n";
-			std::cout << "forward: " << forwardTime * 1000.0f << "\n";
-			std::cout << "post processing: " << postProcessTime * 1000.0f << "\n";
-			if(reconstruction) std::cout << "reconstruction: " << reconstructionTime * 1000.0f << "\n";
-			std::cout << "output: " << outputTime * 1000.0f << "\n";
-			std::cout << "total frame: " << totalTime.get_time() * 1000.0f << "\n\n";
+		if (print_timing) {
+			if (report == 10) {
+				report = 0;
+				std::cout << "gBuffer: " << gBufferTime * 1000.0f << "\n";
+				std::cout << "ssao: " << ssaoTime * 1000.0f << "\n";
+				std::cout << "deferred: " << deferredTime * 1000.0f << "\n";
+				std::cout << "forward: " << forwardTime * 1000.0f << "\n";
+				std::cout << "post processing: " << postProcessTime * 1000.0f << "\n";
+				std::cout << "total frame: " << totalTime.get_time() * 1000.0f << "\n\n";
+			}
+			++report;
 		}
-		++report;
 	}
-	delete fft;
+	delete reconstructor;
 
 	glfwTerminate();
 	return EXIT_SUCCESS;
 }
-
-void set_projection()
-{
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-	glOrtho(-1.0, 1.0, -1.0, 1.0, -1.0, 1.0);
-	glMatrixMode(GL_MODELVIEW);
-}
-
-void draw_fft_source_rb()
-{
-	glClearColor(0.0, 0.0, 0.0, 0.0);
-	glClear(GL_COLOR_BUFFER_BIT);
-	set_projection();
-	glLoadIdentity();
-
-	glColor3f(1.0f, 0.0f, 1.0f);
-	glCallList(source_list);
-}
-
-void draw_fft_source_g()
-{
-	glClearColor(0.0, 0.0, 0.0, 0.0);
-	glClear(GL_COLOR_BUFFER_BIT);
-	set_projection();
-	glLoadIdentity();
-
-	glUseProgram(g2r_prog.ID);
-	glEnable(GL_TEXTURE_2D);
-	glCallList(source_list);
-	glDisable(GL_TEXTURE_2D);
-	glUseProgram(0);
-}
-
 
 void renderCube()
 {
@@ -762,7 +753,6 @@ void renderQuad()
 	glBindVertexArray(0);
 }
 
-
 void process_input(GLFWwindow* window) {
 	// if escape was pressed, suggest closing the window
 	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
@@ -793,6 +783,25 @@ void process_input(GLFWwindow* window) {
 			camera.ProcessKeyboard(RIGHT, deltaTime + 1.0f);
 		else
 			camera.ProcessKeyboard(RIGHT, deltaTime);
+	}
+
+	if (glfwGetKey(window, GLFW_KEY_U) == GLFW_PRESS)
+	{
+		uncharted_tonemap = !uncharted_tonemap;
+		std::cout << "uncharted tonemapping equals " << uncharted_tonemap << "\n\n";
+	}
+
+	if (glfwGetKey(window, GLFW_KEY_G) == GLFW_PRESS)
+	{
+		laplace_pipeline = !laplace_pipeline;
+		if (laplace_pipeline)	std::cout << "using gradient reconstruction postprocessing pipeline\n\n";
+		else std::cout << "using postprocessing pipeline\n\n";
+	}
+
+	if (glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS)
+	{
+		print_timing = !print_timing;
+		std::cout << "print timing equals " << print_timing << "\n\n";
 	}
 }
 
