@@ -52,42 +52,71 @@ void matrix_init(matrix &mat, const unsigned int rows, const unsigned int cols, 
 }
 
 void matrix_downsample_half(matrix &target, matrix &input) {
-	const unsigned int pad = target.padding;
-	const unsigned int limit_rows = target.rows - pad;
-	const unsigned int row_length = target.cols;
-	const unsigned int limit_cols = row_length - pad;
-	unsigned int upper_left;
-	for (int i = pad; i < limit_rows; ++i) {
-		for (int j = pad; j < limit_cols; ++j) {
-			upper_left = pad + 2 * i * row_length + 2 * j;
-			target.values[i*row_length + j] = (input.values[upper_left] + input.values[upper_left + 1] + input.values[upper_left + row_length] + input.values[upper_left + row_length + 1]) * 0.25f;
+	const unsigned int target_pad = target.padding;
+	const unsigned int limit_rows = target.rows - target_pad;
+	const unsigned int target_row_length = target.cols;
+	const unsigned int limit_cols = target_row_length - target_pad;
+	const unsigned int stride = 2;
+	const unsigned int input_pad = input.padding;
+	const unsigned int input_row_length = input.cols;
+	
+	#pragma omp parallel for
+	for (int i = target_pad; i < limit_rows; ++i) {
+		for (int j = target_pad; j < limit_cols; ++j) {
+			const unsigned int upper_left = stride * i * input_row_length + stride * j + input_pad;
+			target.values[i*target_row_length + j + target_pad] = (input.values[upper_left] + input.values[upper_left + 1] + input.values[upper_left + input_row_length] + input.values[upper_left + input_row_length + 1]) * 0.25f;
 		}
 	}
 }
 
-void matrix_upsample_special_double(matrix &target, matrix &input) {
-	const unsigned int pad = input.padding;
-	const unsigned int limit_rows = input.rows - pad;
+void matrix_upsample_simple_double(matrix &target, matrix &input) {
+	const unsigned int in_pad = input.padding;
+	const unsigned int limit_rows = input.rows - in_pad;
 	const unsigned int row_length = input.cols;
-	const unsigned int limit_cols = row_length - pad;
-	unsigned int upper_left;
-	float sample;
-	for (int i = pad; i < limit_rows; ++i) {
-		for (int j = pad; j < limit_cols; ++j) {
-			upper_left = pad + 2 * i * row_length + 2 * j;
-			sample = input.values[i*row_length + j];
-			target.values[upper_left] = sample;
-			target.values[upper_left + 1] = sample; 
-			target.values[upper_left + row_length] = sample; 
-			target.values[upper_left + row_length + 1] = sample;
+	const unsigned int limit_cols = row_length - in_pad;
+	const unsigned int target_pad = target.padding;
+	const unsigned int target_row_length = target.cols;
+	const unsigned int stride = 2;
+
+	#pragma omp parallel for
+	for (int i = 0; i < limit_rows; ++i) {
+		for (int j = 0; j < limit_cols; ++j) {
+			const float input_sample = input.values[(i+in_pad)*row_length + j + in_pad];
+			const unsigned int target_upper_left = ((i*stride)+target_pad) * target_row_length + (j*stride) + target_pad;
+			target.values[target_upper_left] = input_sample;
+			target.values[target_upper_left + 1] = input_sample;
+			target.values[target_upper_left + target_row_length] = input_sample;
+			target.values[target_upper_left + target_row_length + 1] = input_sample;
+		}
+	}
+}
+
+void matrix_upsample_zeros_double(matrix &target, matrix &input) {
+	const unsigned int in_pad = input.padding;
+	const unsigned int limit_rows = input.rows - in_pad;
+	const unsigned int row_length = input.cols;
+	const unsigned int limit_cols = row_length - in_pad;
+	const unsigned int target_pad = target.padding;
+	const unsigned int target_row_length = target.cols;
+	const unsigned int stride = 2;
+
+	#pragma omp parallel for
+	for (int i = 0; i < limit_rows; ++i) {
+		for (int j = 0; j < limit_cols; ++j) {
+			const float input_sample = input.values[(i + in_pad)*row_length + j + in_pad];
+			const unsigned int target_upper_left = ((i*stride) + target_pad) * target_row_length + (j*stride) + target_pad;
+			target.values[target_upper_left] = input_sample;
+			//target.values[target_upper_left + 1] = 0.0f;
+			//target.values[target_upper_left + target_row_length] = 0.0f;
+			//target.values[target_upper_left + target_row_length + 1] = 0.0f;
 		}
 	}
 }
 
 // could be optimized further by creating a function or switch for each of the 
 // common kernel sizes which removed the two inner for-loops
-void matrix_convolve(matrix &input, matrix &output, matrix &kernel) {
-	if (input.cols != output.cols || input.rows != output.rows) return;
+void matrix_convolve(matrix &target, matrix &input, matrix &kernel) {
+	if (input.cols != target.cols || input.rows != target.rows) return;
 	if (kernel.cols != kernel.rows) return;
 	const unsigned int input_rows = input.rows;
 	const unsigned int input_cols = input.cols;
@@ -106,16 +135,16 @@ void matrix_convolve(matrix &input, matrix &output, matrix &kernel) {
 			// convolve
 			for (int k = kernel_start, k_row = 0; k < kernel_stop; ++k, ++k_row) {
 
-				if (i + k < 0 || i + k > input_rows) continue;
+				if (i + k < 0 || i + k >= input_rows) continue;
 
 				for (int l = kernel_start, k_col = 0; l < kernel_stop; ++l, ++k_col) {
-					if (j + l < 0 || j + l > input_cols) continue;
+					if (j + l < 0 || j + l >= input_cols) continue;
 
 					// add contribution
 					sum += input.values[(i + k)* input_cols + (j + l)] * kernel.values[k_row * kernel_cols + k_col];
 				}
 			}
-			output.values[i * input_cols + j] = sum;
+			target.values[i * input_cols + j] = sum;
 		}
 	}
 }
@@ -149,6 +178,31 @@ void matrix_add_matrix(matrix &target, matrix &toAdd1, matrix &toAdd2) {
 	}
 }
 
+void matrix_transfer_matrix(matrix &target, matrix &input) {
+	const unsigned int mat_pad = target.padding;
+	const unsigned int mat_row = target.rows;
+	const unsigned int mat_col = target.cols;
+	#pragma omp parallel for shared(target, input)
+	for (int i = mat_pad; i < mat_row; ++i) {
+		for (int j = mat_pad; j < mat_col - mat_pad; ++j) {
+			target.values[i * mat_col + j] = input.values[i * mat_col + j];
+		}
+	}
+}
+
+void matrix_average_matrix(matrix &target, matrix &toAdd1, matrix &toAdd2) {
+	if (target.rows != toAdd1.rows || target.cols != toAdd1.cols || target.padding != toAdd1.padding) return;
+	const unsigned int mat_pad = target.padding;
+	const unsigned int mat_row = target.rows;
+	const unsigned int mat_col = target.cols;
+	#pragma omp parallel for shared(target, toAdd1, toAdd2)
+	for (int i = mat_pad; i < mat_row; ++i) {
+		for (int j = mat_pad; j < mat_col - mat_pad; ++j) {
+			target.values[i * mat_col + j] = (toAdd1.values[i * mat_col + j] + toAdd2.values[i * mat_col + j]) * 0.5f;;
+		}
+	}
+}
+
 void matrix_mult_matrix(matrix &target, matrix &toAdd1, matrix &toAdd2) {
 	if (target.rows != toAdd1.rows || target.cols != toAdd1.cols || target.padding != toAdd1.padding) return;
 	const unsigned int mat_pad = target.padding;
@@ -157,6 +211,17 @@ void matrix_mult_matrix(matrix &target, matrix &toAdd1, matrix &toAdd2) {
 	for (int i = mat_pad; i < mat_row; ++i) {
 		for (int j = mat_pad; j < mat_col - mat_pad; ++j) {
 			target.values[i * mat_col + j] = toAdd1.values[i * mat_col + j] * toAdd2.values[i * mat_col + j];
+		}
+	}
+}
+
+void matrix_mult(matrix &target, float mult) {
+	const unsigned int mat_pad = target.padding;
+	const unsigned int mat_row = target.rows;
+	const unsigned int mat_col = target.cols;
+	for (int i = mat_pad; i < mat_row; ++i) {
+		for (int j = mat_pad; j < mat_col - mat_pad; ++j) {
+			target.values[i * mat_col + j] = target.values[i * mat_col + j] * mult;
 		}
 	}
 }

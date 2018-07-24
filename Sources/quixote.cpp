@@ -43,7 +43,7 @@ bool laplace_pipeline = true;
 
 // post-process
 unsigned int postProcessFBO, postProcessBuffer, postProcessDepth, postProcessOutput;
-bool post_process_edges = false;
+bool post_process_edges = true;
 bool post_process_transparency = true;
 
 // reconstruction
@@ -57,7 +57,7 @@ bool laplace_transparency = true;
 glm::vec3 gamma(1.0f / 2.2f);
 float exposure = 1.0f;
 bool uncharted_tonemap = true;
-bool print_timing = false;
+bool print_timing = true;
 
 // object specific
 // ---------------
@@ -588,7 +588,7 @@ int main(int argc, char * argv[]) {
 			// ------
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 			glDisable(GL_DEPTH_TEST);
-			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+			glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 			shaderLaplaceReconstructionOutput.use();
 			shaderLaplaceReconstructionOutput.setBool("uncharted_tonemap", uncharted_tonemap);

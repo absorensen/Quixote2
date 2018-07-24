@@ -38,9 +38,9 @@ void main()
 			else texSamples[i] = texSamples[i].x > 0 && texSamples[i].y > 0 && texSamples[i].z > 0 ? texSamples[i] : deferred;
 		}	
 
-		col = 4*texSamples[0];
+		col = -4*texSamples[0];
 		for(int i = 1; i < 5; i++)
-			col += -texSamples[i];
+			col += texSamples[i];
 
 	} else {
 		col = vec3(texture(forwardOutput, TexCoords.st));
