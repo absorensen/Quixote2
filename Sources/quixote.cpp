@@ -35,20 +35,22 @@ std::vector<glm::vec3> ssaoKernel;
 std::vector<glm::vec3> ssaoNoise;
 
 // forward
-unsigned int forwardFBO, forwardBuffer, forwardDepth, forwardOutput;
+unsigned int forwardFBO, forwardBuffer, forwardDepthTex, forwardDepth, forwardOutput;
 
 
 // switch between primary and laplacian domain post processing pipelines
-bool laplace_pipeline = true;
+bool laplace_pipeline = false;
 
 // post-process
 unsigned int postProcessFBO, postProcessBuffer, postProcessDepth, postProcessOutput;
-bool post_process_edges = true;
+bool post_process_edges = false;
 bool post_process_transparency = true;
+bool visualize_depth = false;
+bool depth_of_field = true;
 
 // reconstruction
 unsigned int laplacePostProcessFBO, laplaceProcessBuffer, laplacePostProcessDepth, laplacePostProcessOutput, laplaceReconstructionOutput;
-bool laplace_edges = true;
+bool laplace_edges = false;
 bool laplace_transparency = true;
 //unsigned int source_list;
 //Shader g2r_prog;
@@ -56,8 +58,9 @@ bool laplace_transparency = true;
 // output stage
 glm::vec3 gamma(1.0f / 2.2f);
 float exposure = 1.0f;
-bool uncharted_tonemap = true;
-bool print_timing = true;
+float focus = 0.96f;
+bool uncharted_tonemap = false;
+bool print_timing = false;
 
 // object specific
 // ---------------
@@ -124,10 +127,10 @@ int main(int argc, char * argv[]) {
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS);
 
-	Reconstructor* reconstructor = new Reconstructor(SCR_WIDTH, SCR_HEIGHT, 1, GL_RGBA, CONV_PYR_CPU);
+	Reconstructor* reconstructor = new Reconstructor(SCR_WIDTH, SCR_HEIGHT, 2, GL_RGBA, CONV_PYR_CPU);
 
 	std::string path("Glitter/Sources/");
-	Shader shaderGeometryPass(path+"g_buffer.vert", path + "g_buffer.frag");
+	Shader shaderGeometryPass(path + "g_buffer.vert", path + "g_buffer.frag");
 	Shader shaderLightingPass(path + "simple.vert", path + "deferred_shading.frag");
 	Shader shaderSSAO(path + "simple.vert", path + "ssao.frag");
 	Shader shaderSSAOBlur(path + "simple.vert", path + "ssao_blur.frag");
@@ -136,11 +139,10 @@ int main(int argc, char * argv[]) {
 	// postprocessing path 1 - if reconstruction==false
 	Shader shaderPostProcess(path + "simple.vert", path + "post_process.frag");
 	Shader shaderOutput(path + "simple.vert", path + "output.frag");
-	
+
 	// postprocessing path 2 - if reconstruction==true
 	Shader shaderLaplacePostProcess(path + "simple.vert", path + "laplace_post_process.frag");
 	Shader shaderLaplaceReconstructionOutput(path + "simple.vert", path + "laplace_reconstruction_output.frag");
-	
 	//g2r_prog = Shader(path+ "fft_texcoord.vert", path + "fft_g2r.frag");
 
 	// -- making models, making shit, fighting round the world --
@@ -200,9 +202,9 @@ int main(int argc, char * argv[]) {
 	// tell OpenGL which color attachments we'll use (of this framebuffer) for rendering 
 	GLuint deferredAttachments[5] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3, GL_COLOR_ATTACHMENT4 };
 	glDrawBuffers(5, deferredAttachments);
-	
-	
-	
+
+
+
 	// create and attach depth buffer (renderbuffer)
 	glGenRenderbuffers(1, &accumulatorDepth);
 	glBindRenderbuffer(GL_RENDERBUFFER, accumulatorDepth);
@@ -293,12 +295,20 @@ int main(int argc, char * argv[]) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, forwardOutput, 0);
 
+	glGenTextures(1, &forwardDepthTex);
+	glBindTexture(GL_TEXTURE_2D, forwardDepthTex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SCR_WIDTH, SCR_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+
 	glGenRenderbuffers(1, &forwardDepth);
 	glBindRenderbuffer(GL_RENDERBUFFER, forwardDepth);
 	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, SCR_WIDTH, SCR_HEIGHT); // use a single renderbuffer object for both a depth AND stencil buffer.
 	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, forwardDepth);
 
-	GLuint attachmentsForward[1] = { GL_COLOR_ATTACHMENT0 };
+	GLuint attachmentsForward[2] = { GL_COLOR_ATTACHMENT0 };
 	glDrawBuffers(1, attachmentsForward);
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
 		std::cout << "Framebuffer not complete!" << std::endl;
@@ -396,33 +406,38 @@ int main(int argc, char * argv[]) {
 
 	shaderSSAOBlur.use();
 	shaderSSAOBlur.setInt("ssaoInput", 0);
-	
-	//if (reconstruction) {
-		shaderLaplacePostProcess.use();
-		shaderLaplacePostProcess.setInt("deferredOutput", 0);
-		shaderLaplacePostProcess.setInt("forwardOutput", 1);
-		shaderLaplacePostProcess.setBool("edges", laplace_edges);
-		shaderLaplacePostProcess.setBool("transparency", laplace_transparency);
 
-		shaderLaplaceReconstructionOutput.use();
-		shaderLaplaceReconstructionOutput.setInt("reconstruction_output", 0);
-		shaderLaplaceReconstructionOutput.setFloat("exposure", exposure);
-		shaderLaplaceReconstructionOutput.setVec3("gamma", gamma);
-		shaderLaplaceReconstructionOutput.setBool("uncharted_tonemap", uncharted_tonemap);
-	/*}
-	else {*/
-		shaderPostProcess.use();
-		shaderPostProcess.setInt("deferredOutput", 0);
-		shaderPostProcess.setInt("forwardOutput", 1);
-		shaderPostProcess.setBool("edges", post_process_edges);
-		shaderPostProcess.setBool("transparency", post_process_transparency);
+	shaderLaplacePostProcess.use();
+	shaderLaplacePostProcess.setInt("deferredOutput", 0);
+	shaderLaplacePostProcess.setInt("forwardOutput", 1);
+	shaderLaplacePostProcess.setBool("edges", laplace_edges);
+	shaderLaplacePostProcess.setBool("transparency", laplace_transparency);
 
-		shaderOutput.use();
-		shaderOutput.setInt("postProcessOutput", 0);
-		shaderOutput.setFloat("exposure", exposure);
-		shaderOutput.setVec3("gamma", gamma);
-		shaderOutput.setBool("uncharted_tonemap", uncharted_tonemap);
-	//}
+	shaderLaplaceReconstructionOutput.use();
+	shaderLaplaceReconstructionOutput.setInt("reconstruction_output", 0);
+	shaderLaplaceReconstructionOutput.setFloat("exposure", exposure);
+	shaderLaplaceReconstructionOutput.setVec3("gamma", gamma);
+	shaderLaplaceReconstructionOutput.setBool("uncharted_tonemap", uncharted_tonemap);
+
+	shaderPostProcess.use();
+	shaderPostProcess.setInt("deferredOutput", 0);
+	shaderPostProcess.setInt("forwardOutput", 1);
+	shaderPostProcess.setInt("forwardDepthTex", 2);
+	shaderPostProcess.setBool("edges", post_process_edges);
+	shaderPostProcess.setBool("transparency", post_process_transparency);
+	shaderPostProcess.setBool("viz_depth", visualize_depth);
+
+	shaderOutput.use();
+	shaderOutput.setInt("postProcessOutput", 0);
+	shaderOutput.setInt("forwardDepthTex", 1);
+	shaderOutput.setFloat("exposure", exposure);
+	shaderOutput.setVec3("gamma", gamma);
+	shaderOutput.setFloat("focus", focus);
+	shaderOutput.setBool("uncharted_tonemap", uncharted_tonemap);
+	shaderOutput.setBool("depth_of_field", depth_of_field);
+	shaderOutput.setInt("height", SCR_HEIGHT);
+	shaderOutput.setBool("width", SCR_WIDTH);
+
 	double gBufferTime, ssaoTime, deferredTime, forwardTime, postProcessTime, reconstructionTime, outputTime;
 	int report = 0;
 	Timer t, totalTime;
@@ -548,7 +563,7 @@ int main(int argc, char * argv[]) {
 		shaderForward.setMat4("view", view);
 		for (unsigned int i = 0; i < lightPositions.size(); ++i)
 		{
-			
+
 			model = glm::mat4(1.0f);
 			model = glm::translate(model, lightPositions[i]);
 			model = glm::scale(model, point_lights_size);
@@ -556,6 +571,9 @@ int main(int argc, char * argv[]) {
 			shaderForward.setVec3("lightColor", lightColors[i]);
 			renderCube();
 		}
+		glBindTexture(GL_TEXTURE_2D, forwardDepthTex);
+		glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, 512, 512);
+
 		t.stop();
 		forwardTime = t.get_time();
 		t.start();
@@ -610,8 +628,11 @@ int main(int argc, char * argv[]) {
 			glBindTexture(GL_TEXTURE_2D, deferredOutput);
 			glActiveTexture(GL_TEXTURE1);
 			glBindTexture(GL_TEXTURE_2D, forwardOutput);
+			glActiveTexture(GL_TEXTURE2);
+			glBindTexture(GL_TEXTURE_2D, forwardDepthTex);
 			shaderPostProcess.setBool("edges", post_process_edges);
 			shaderPostProcess.setBool("transparency", post_process_transparency);
+			shaderPostProcess.setBool("viz_depth", visualize_depth);
 			renderQuad();
 
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -619,14 +640,20 @@ int main(int argc, char * argv[]) {
 			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 			shaderOutput.use();
+			shaderOutput.setFloat("focus", focus);
 			shaderOutput.setBool("uncharted_tonemap", uncharted_tonemap);
+			shaderOutput.setBool("depth_of_field", depth_of_field);
+			shaderOutput.setInt("height", SCR_HEIGHT);
+			shaderOutput.setInt("width", SCR_WIDTH);
 			glActiveTexture(GL_TEXTURE0);
 			glBindTexture(GL_TEXTURE_2D, postProcessOutput);
+			glActiveTexture(GL_TEXTURE1);
+			glBindTexture(GL_TEXTURE_2D, forwardDepthTex);
 			renderQuad();
 			glEnable(GL_DEPTH_TEST);
 		}
 
-		
+
 		t.stop();
 		postProcessTime = t.get_time();
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -830,7 +857,8 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
 }
 
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
-	camera.ProcessMouseScroll((float)yoffset);
+	focus += yoffset * 0.005;
+	//camera.ProcessMouseScroll((float)yoffset);
 }
 
 unsigned int loadTexture(char const * path)

@@ -11,7 +11,6 @@
 struct layer {
 	matrix _a[3];
 	matrix _a_conv[3];
-	matrix _mid[3];
 	matrix _b[3];
 	matrix _b_conv[3];
 };
@@ -26,8 +25,11 @@ public:
 
 private:
 	unsigned int _height, _width, _budget, _no_of_components, _format, _levels;
+	float _max, _pad_value, _init_value;
+	float _orig_mean[3];
 	//unsigned int _input_texture, _output_texture;
-	matrix _h1, _h2, _g, _lap;
+	matrix _h1, _h2, _g, _lap, _lapx0, _lapx1, _lapy0, _lapy1;
+	matrix _input[3];
 	layer *_layers;
 	GLfloat *_data = 0;
 
@@ -36,6 +38,8 @@ private:
 	void ConvPyrCPU::distribute_input();
 	void ConvPyrCPU::interleave_output();
 	void ConvPyrCPU::integrate_pyramid();
+	void ConvPyrCPU::debug_integrate_pyramid();
+	void ConvPyrCPU::compute_laplacian();
 	void ConvPyrCPU::clean_up();
 
 };

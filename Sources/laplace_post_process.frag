@@ -38,9 +38,11 @@ void main()
 			else texSamples[i] = texSamples[i].x > 0 && texSamples[i].y > 0 && texSamples[i].z > 0 ? texSamples[i] : deferred;
 		}	
 
-		col = -4*texSamples[0];
-		for(int i = 1; i < 5; i++)
-			col += texSamples[i];
+		col = -4.0*texSamples[0];
+		col += texSamples[1];
+		col += texSamples[2];
+		col += texSamples[3];
+		col += texSamples[4];
 
 	} else {
 		col = vec3(texture(forwardOutput, TexCoords.st));
@@ -48,9 +50,16 @@ void main()
 		if(transparency) col = col.x > 0 && col.y > 0 && col.z > 0 ? col + col * deferred : deferred;
 		else col = col.x > 0 && col.y > 0 && col.z > 0 ? col + col * deferred : deferred;
 	}
-	col.x = col.x > 0.0 ? col.x : 0.0;
-	col.y = col.y > 0.0 ? col.y : 0.0;
-	col.z = col.z > 0.0 ? col.z : 0.0;
+//	col.x = col.x > 0.0 ? col.x : 0.0;
+//	col.y = col.y > 0.0 ? col.y : 0.0;
+//	col.z = col.z > 0.0 ? col.z : 0.0;
+
+//HDR
+//    float exposure = 1.0;
+//	vec3 gamma = vec3(1.0/2.2);
+//	col = vec3(1.0) - exp(-col * exposure);
+//	col = pow(col, gamma);
+
 	reconstructionPostProcessOut = col;
 	FragColor = vec4(col, 1.0);
 }

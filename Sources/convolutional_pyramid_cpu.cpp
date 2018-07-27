@@ -7,9 +7,16 @@ void ConvPyrCPU::reconstruct_from_gradients(unsigned int &output_texture) {
 		glReadPixels(0, 0, _width, _height, _format, type, _data);
 	}
 	distribute_input();
+	for (int color = 0; color < 3; ++color) {
+		matrix_mean(_input[color], _orig_mean[color]);
+	}
+
+
 
 	// compute
+	compute_laplacian();
 	integrate_pyramid();
+
 	// transfer output to output texture
 	interleave_output();
 	glBindTexture(GL_TEXTURE_2D, output_texture);
@@ -20,7 +27,7 @@ void ConvPyrCPU::reconstruct_from_gradients(unsigned int &output_texture) {
 }
 
 void ConvPyrCPU::distribute_input() {
-	from_rgba_array_to_rgb_matrices(_data, _width, _height, _layers[0]._a);
+	from_rgba_array_to_rgb_matrices(_data, _width, _height, _input);
 }
 
 void ConvPyrCPU::interleave_output() {
@@ -28,49 +35,56 @@ void ConvPyrCPU::interleave_output() {
 }
 
 void ConvPyrCPU::clean_up() {
-	for (int layer = 0; layer < 1; ++layer) {
+	for (int color = 0; color < 3; ++color) {
+		matrix_reset_all(_input[color], _init_value);
+	}
+	// set main values and padding
+	for (int layer = 0; layer < _levels; ++layer) {
 		for (int color = 0; color < 3; ++color) {
-			matrix_set_all_values(_layers[layer]._a[color], 0.0f);
-			matrix_set_all_values(_layers[layer]._a_conv[color], 0.0f);
-			matrix_set_all_values(_layers[layer]._mid[color], 0.0f);
-			matrix_set_all_values(_layers[layer]._b[color], 0.0f);
-			matrix_set_all_values(_layers[layer]._b_conv[color], 0.0f);
+			matrix_reset_all(_layers[layer]._a[color], _init_value);
+			matrix_reset_all(_layers[layer]._a_conv[color], _init_value);
+			matrix_reset_all(_layers[layer]._b[color], _init_value);
+			matrix_reset_all(_layers[layer]._b_conv[color], _init_value);
 		}
 	}
 }
 
-void ConvPyrCPU::integrate_pyramid() {
-	// down
-	for (int layer = 0; layer < _levels-1; ++layer) {
-		for (int color = 0; color < 3; ++color) {
-			matrix_convolve(_layers[layer]._mid[color], _layers[layer]._a[color], _g);
-		}
-		for (int color = 0; color < 3; ++color) {
-			matrix_convolve(_layers[layer]._a_conv[color],_layers[layer]._a[color], _h1);
-		}
-		for (int color = 0; color < 3; ++color) {
-			matrix_downsample_half(_layers[layer+1]._a[color], _layers[layer]._a_conv[color]);
-		}
+void ConvPyrCPU::compute_laplacian() {
+	for (int color = 0; color < 3; ++color) {
+		matrix_convolve(_layers[0]._a[color], _input[color], _lap, true, false);
 	}
+}
 
-	//// middle
-	//for (int layer = 0; layer < _levels; ++layer) {
-		for (int color = 0; color < 3; ++color) {
-			matrix_convolve(_layers[_levels-1]._b_conv[color], _layers[_levels-1]._a[color], _g);
+void ConvPyrCPU::debug_integrate_pyramid() {
+
+}
+
+void ConvPyrCPU::integrate_pyramid() {
+	float mean_re[3];
+	for (int color = 0; color < 3; ++color) {
+		matrix_mult(_layers[0]._a[color], -1.0f);
+
+		// down
+		for (int layer = 1; layer < _levels; ++layer) {
+			matrix_convolve(_layers[layer - 1]._a_conv[color], _layers[layer - 1]._a[color], _h1, false, false);
+			matrix_downsample_half(_layers[layer]._a[color], _layers[layer - 1]._a_conv[color]);
 		}
-	//}
 
-	// up
-	for (int layer = _levels-2; layer > -1; --layer) {
-		for (int color = 0; color < 3; ++color) {
+		// middle
+		matrix_convolve_padded_to_non(_layers[_levels - 1]._b_conv[color], _layers[_levels - 1]._a[color], _g);
+
+		// up
+		for (int layer = _levels - 2; layer > -1; --layer) {
 			matrix_upsample_zeros_double(_layers[layer]._b[color], _layers[layer + 1]._b_conv[color]);
+			matrix_convolve_padded_to_non(_layers[layer]._b_conv[color], _layers[layer]._a[color], _g);
+			matrix_convolve(_layers[layer]._b_conv[color], _layers[layer]._b[color], _h2, false, true);
 		}
-		for (int color = 0; color < 3; ++color) {
-			matrix_convolve(_layers[layer]._b_conv[color], _layers[layer]._b[color], _h2);
-		}
-		for (int color = 0; color < 3; ++color) {
-			matrix_add_matrix(_layers[layer]._b_conv[color], _layers[layer]._b_conv[color], _layers[layer]._mid[color]);
-		}
+
+		// adjust
+		//matrix_mean(_layers[0]._b_conv[color], mean_re[color]);
+		//matrix_add(_layers[0]._b_conv[color], -mean_re[color]);
+		//matrix_add(_layers[0]._b_conv[color], _orig_mean[color]);
+		//matrix_mult(_layers[0]._b_conv[color], -1.0f);
 	}
 }
 
@@ -80,12 +94,18 @@ ConvPyrCPU::ConvPyrCPU(unsigned int width, unsigned int height, unsigned int bud
 	_budget = budget;
 	_format = format;
 	_no_of_components = check_format_length(format);
-	_levels = (unsigned int)ceil(log2( _height > _width ? _height : _width));
+	_levels = (unsigned int)ceil(log2(_height > _width ? _height : _width));
 	_levels = _levels > 0 ? _levels : 2;
+	_pad_value = 0.0f;
+	_levels = 4;
+	_init_value = 0.0f;
 
 	init_kernels();
 	init_layers();
-	clean_up();
+	//matrix_mult(_h1, -1.0f);
+	//matrix_mult(_h2, -1.0f);
+
+	//clean_up();
 }
 
 
@@ -94,16 +114,18 @@ ConvPyrCPU::~ConvPyrCPU() {
 	matrix_deallocate(_h2);
 	matrix_deallocate(_g);
 	matrix_deallocate(_lap);
+	for (int color = 0; color < 3; ++color) {
+		matrix_deallocate(_input[color]);
+	}
 	for (int i = 0; i < _levels; ++i) {
 		for (int j = 0; j < 3; ++j) {
 			matrix_deallocate(_layers[i]._a[j]);
 			matrix_deallocate(_layers[i]._a_conv[j]);
-			matrix_deallocate(_layers[i]._mid[j]);
 			matrix_deallocate(_layers[i]._b[j]);
 			matrix_deallocate(_layers[i]._b_conv[j]);
 		}
 	}
-	if (_data != 0) delete [] _data;
+	if (_data != 0) delete[] _data;
 }
 
 void ConvPyrCPU::init_kernels()
@@ -165,27 +187,49 @@ void ConvPyrCPU::init_kernels()
 	}
 
 	const int lap_width = 3;
-	const float sign = -1.0f;
+	const float sign = 1.0f;
 	matrix_init(_lap, lap_width, lap_width);
 	_lap.values[0 * lap_width] = 0.0f;			_lap.values[0 * lap_width + 1] = sign * 1.0f;		_lap.values[0 * lap_width + 2] = 0.0f;
 	_lap.values[1 * lap_width] = sign * 1.0f;	_lap.values[1 * lap_width + 1] = sign * -4.0f;		_lap.values[1 * lap_width + 2] = sign * 1.0f;
 	_lap.values[2 * lap_width] = 0.0f;			_lap.values[2 * lap_width + 1] = sign * 1.0f;		_lap.values[2 * lap_width + 2] = 0.0f;
+
+	matrix_init(_lapx0, 1, lap_width);
+	_lapx0.values[0] = 1.0f;	_lapx0.values[1] = -2.0f;	_lapx0.values[2] = 1.0f;
+
+	matrix_init(_lapx1, 1, lap_width);
+	_lapx1.values[0] = 0.0f;	_lapx1.values[1] = 1.0f;	_lapx1.values[2] = -1.0f;
+
+	matrix_init(_lapy0, lap_width, 1);
+	_lapy0.values[0] = 1.0f;	_lapy0.values[1] = -2.0f;	_lapy0.values[2] = 1.0f;
+
+	matrix_init(_lapy1, lap_width, 1);
+	_lapy1.values[0] = 0.0f;	_lapy1.values[1] = 1.0f;	_lapy1.values[2] = -1.0f;
 }
 
 void ConvPyrCPU::init_layers() {
+	_data = (GLfloat*)malloc(sizeof(GLfloat) * _no_of_components * _width * _height);
+
 	_layers = new layer[_levels];
 	unsigned int height = _height;
 	unsigned int width = _width;
-	for (int i = 0; i < _levels; ++i) {
-		for (int j = 0; j < 3; ++j) {
-			matrix_init(_layers[i]._a[j], height, width, false, 1.0f, 1, 1.0f);
-			matrix_init(_layers[i]._a_conv[j], height, width, false, 1.0f, 1, 1.0f);
-			matrix_init(_layers[i]._mid[j], height, width, false, 1.0f, 1, 1.0f);
-			matrix_init(_layers[i]._b[j], height, width, false, 1.0f, 1, 1.0f);
-			matrix_init(_layers[i]._b_conv[j], height, width, false, 1.0f, 1, 1.0f);
-		}
-		height = height >> 1;
-		width = width >> 1;
+	const unsigned int pad = _h1.cols;
+	const bool init_values = true;
+	const float init_value = _init_value;
+	const int input_pad = 1;
+	for (int color = 0; color < 3; ++color) {
+		matrix_init(_input[color], height, width, init_values, init_value, input_pad, _pad_value);
 	}
-	_data = (GLfloat*)malloc(sizeof(GLfloat) * _no_of_components * _width * _height);
+	height += 2 * input_pad;
+	width += 2 * input_pad;
+	for (int i = 0; i < _levels; ++i) {
+		for (int color = 0; color < 3; ++color) {
+			//pad_value = _orig_mean[color];
+			matrix_init(_layers[i]._a[color], height, width, init_values, init_value, pad, _pad_value);
+			matrix_init(_layers[i]._a_conv[color], height, width, init_values, init_value, pad, _pad_value);
+			matrix_init(_layers[i]._b[color], height, width, init_values, init_value, 0, _pad_value);
+			matrix_init(_layers[i]._b_conv[color], height, width, init_values, init_value, 0, _pad_value);
+		}
+		height = height / 2 + 2 * pad;
+		width = width / 2 + 2 * pad;
+	}
 }
