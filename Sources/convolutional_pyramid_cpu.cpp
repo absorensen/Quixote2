@@ -1,20 +1,20 @@
 #include "convolutional_pyramid_cpu.hpp"
 
-void ConvPyrCPU::reconstruct_from_gradients(unsigned int &output_texture) {
+void ConvPyrCPU::reconstruct_from_gradients(unsigned int &output_texture, bool laplacian) {
+	#pragma omp parallel
+	{
 	const unsigned int type = GL_FLOAT;
 	// transfer input texture to matrix
 	if (_data) {
 		glReadPixels(0, 0, _width, _height, _format, type, _data);
 	}
-	distribute_input();
-	for (int color = 0; color < 3; ++color) {
-		matrix_mean(_input[color], _orig_mean[color]);
-	}
-
-
+	distribute_input(laplacian);
+	//for (int color = 0; color < 3; ++color) {
+	//	matrix_mean(_input[color], _orig_mean[color]);
+	//}
 
 	// compute
-	compute_laplacian();
+	if (laplacian) compute_laplacian();
 	integrate_pyramid();
 
 	// transfer output to output texture
@@ -22,12 +22,13 @@ void ConvPyrCPU::reconstruct_from_gradients(unsigned int &output_texture) {
 	glBindTexture(GL_TEXTURE_2D, output_texture);
 	glTexImage2D(GL_TEXTURE_2D, 0, _format, _width, _height, 0, _format, type, _data);
 	glBindTexture(GL_TEXTURE_2D, 0);
-
-	clean_up();
+	}
+	//clean_up();
 }
 
-void ConvPyrCPU::distribute_input() {
-	from_rgba_array_to_rgb_matrices(_data, _width, _height, _input);
+void ConvPyrCPU::distribute_input(bool laplacian) {
+	if (laplacian)from_rgba_array_to_rgb_matrices(_data, _width, _height, _input);
+	else from_rgba_array_to_rgb_matrices(_data, _width, _height, _layers[0]._a);
 }
 
 void ConvPyrCPU::interleave_output() {
@@ -55,14 +56,10 @@ void ConvPyrCPU::compute_laplacian() {
 	}
 }
 
-void ConvPyrCPU::debug_integrate_pyramid() {
-
-}
-
 void ConvPyrCPU::integrate_pyramid() {
 	float mean_re[3];
+
 	for (int color = 0; color < 3; ++color) {
-		matrix_mult(_layers[0]._a[color], -1.0f);
 
 		// down
 		for (int layer = 1; layer < _levels; ++layer) {
@@ -97,15 +94,10 @@ ConvPyrCPU::ConvPyrCPU(unsigned int width, unsigned int height, unsigned int bud
 	_levels = (unsigned int)ceil(log2(_height > _width ? _height : _width));
 	_levels = _levels > 0 ? _levels : 2;
 	_pad_value = 0.0f;
-	_levels = 4;
 	_init_value = 0.0f;
 
 	init_kernels();
 	init_layers();
-	//matrix_mult(_h1, -1.0f);
-	//matrix_mult(_h2, -1.0f);
-
-	//clean_up();
 }
 
 
@@ -187,7 +179,7 @@ void ConvPyrCPU::init_kernels()
 	}
 
 	const int lap_width = 3;
-	const float sign = 1.0f;
+	const float sign = -1.0f;
 	matrix_init(_lap, lap_width, lap_width);
 	_lap.values[0 * lap_width] = 0.0f;			_lap.values[0 * lap_width + 1] = sign * 1.0f;		_lap.values[0 * lap_width + 2] = 0.0f;
 	_lap.values[1 * lap_width] = sign * 1.0f;	_lap.values[1 * lap_width + 1] = sign * -4.0f;		_lap.values[1 * lap_width + 2] = sign * 1.0f;
@@ -215,7 +207,7 @@ void ConvPyrCPU::init_layers() {
 	const unsigned int pad = _h1.cols;
 	const bool init_values = true;
 	const float init_value = _init_value;
-	const int input_pad = 1;
+	const int input_pad = pad;
 	for (int color = 0; color < 3; ++color) {
 		matrix_init(_input[color], height, width, init_values, init_value, input_pad, _pad_value);
 	}
@@ -226,8 +218,8 @@ void ConvPyrCPU::init_layers() {
 			//pad_value = _orig_mean[color];
 			matrix_init(_layers[i]._a[color], height, width, init_values, init_value, pad, _pad_value);
 			matrix_init(_layers[i]._a_conv[color], height, width, init_values, init_value, pad, _pad_value);
-			matrix_init(_layers[i]._b[color], height, width, init_values, init_value, 0, _pad_value);
-			matrix_init(_layers[i]._b_conv[color], height, width, init_values, init_value, 0, _pad_value);
+			matrix_init(_layers[i]._b[color], height, width, init_values, init_value, pad, _pad_value);
+			matrix_init(_layers[i]._b_conv[color], height, width, init_values, init_value, pad, _pad_value);
 		}
 		height = height / 2 + 2 * pad;
 		width = width / 2 + 2 * pad;

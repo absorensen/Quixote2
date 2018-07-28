@@ -26,6 +26,7 @@ void matrix_convolve(matrix &target, matrix &input, matrix &kernel, bool ignoreT
 void matrix_convolve_padded_to_non(matrix &target, matrix &input, matrix &kernel);
 void matrix_add_matrix(matrix &target, matrix &toAdd1, matrix &toAdd2);
 void matrix_transfer_matrix(matrix &target, matrix &input);
+void matrix_transfer_matrix_padded_target(matrix &target, matrix &input);
 void matrix_max(matrix &target, float &max);
 void matrix_mean(matrix &target, float &mean);
 void matrix_sub_matrix(matrix &target, matrix &toAdd1, matrix &toAdd2);

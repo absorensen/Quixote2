@@ -9,14 +9,14 @@ Reconstructor::~Reconstructor() {
 	if (_mode == CONV_PYR_CPU) delete _conv_pyr_cpu;
 }
 
-void Reconstructor::reconstruct_from_gradients(unsigned int &output_texture) {
+void Reconstructor::reconstruct_from_gradients(unsigned int &output_texture, bool laplacian) {
 	if (_mode == CONV_PYR_CPU || _mode == FFT_CPU) {
 
 		//ArrayMultAllValues(_data, _width*_height*_input_components, 0.1f);
 
 		// compute
 		//if (_mode == FFT_CPU) DoFFT(_data);
-		if (_mode == CONV_PYR_CPU) _conv_pyr_cpu->reconstruct_from_gradients(output_texture);
+		if (_mode == CONV_PYR_CPU) _conv_pyr_cpu->reconstruct_from_gradients(output_texture, laplacian);
 		else; //do_fft();
 	}
 	else if (_mode == CONV_PYR_GPU) {

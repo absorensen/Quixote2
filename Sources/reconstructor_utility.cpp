@@ -98,17 +98,16 @@ void matrix_downsample_half(matrix &target, matrix &input) {
 	const unsigned int target_pad = target.padding;
 	const unsigned int target_cols = target.cols;
 	const unsigned int stride = 2;
-	const unsigned int input_pad = input.padding;
 	const unsigned int input_cols = input.cols;
 	const unsigned int input_rows = input.rows;
-	const unsigned int in_max = input_cols * input_rows;
 
-	//#pragma omp parallel for
-	for (int i = 0, ty = target_pad; i < input_rows; i += stride, ++ty) {
+	#pragma omp for
+	for (int i = 0; i < input_rows; i += stride) {
+		int ty = target_pad;
 		for (int j = 0, tx = target_pad; j < input_cols; j += stride, ++tx) {
-			const unsigned int upper_left = i * input_cols + j;
-			target.values[ty * target_cols + tx] = input.values[upper_left];
+			target.values[ty * target_cols + tx] = input.values[i * input_cols + j];
 		}
+		++ty;
 	}
 }
 
@@ -162,13 +161,16 @@ void matrix_upsample_zeros_double(matrix &target, matrix &input) {
 
 	//#pragma omp parallel for
 	//potential problem area iy =
-	for (int iy = in_pad, ty = target_pad; ty < target_limit_rows; ++iy, ty += stride) {
+	#pragma omp for
+	for (int ty = target_pad; ty < target_limit_rows; ty += stride) {
+		int iy = in_pad;
 		for (int ix = in_pad, tx = target_pad; tx < target_limit_cols; ++ix, tx += stride) {
 			const float input_sample = input.values[iy*input_cols + ix];
 			const unsigned int target_dest = ty * target_cols + tx;
 			if (target_dest >= target_limit) break;
 			target.values[target_dest] = input_sample;
 		}
+		++iy;
 	}
 }
 
@@ -186,12 +188,12 @@ void matrix_convolve_padded_to_non(matrix &target, matrix &input, matrix &kernel
 	const unsigned int kernel_col_size = kernel.cols;
 	const int kernel_col_start = 0 - kernel_col_size / 2;
 	const int kernel_col_stop = -(kernel_col_start - 1);
-	float sum;
 	// for each pixel
-	//#pragma omp parallel for private(sum)
-	for (int i = input_pad, ty = 0; i < input_limit_rows; ++i, ++ty) {
+	#pragma omp for
+	for (int i = input_pad; i < input_limit_rows; ++i) {
+		int ty = 0;
 		for (int j = input_pad, tx = 0; j < input_limit_cols; ++j, ++tx) {
-			sum = 0.0f;
+			float sum = 0.0f;
 
 			// convolve
 			for (int k = kernel_row_start, k_row = 0; k < kernel_row_stop; ++k, ++k_row) {
@@ -207,6 +209,7 @@ void matrix_convolve_padded_to_non(matrix &target, matrix &input, matrix &kernel
 			}
 			target.values[ty * target_cols + tx] = sum;
 		}
+		++ty;
 	}
 }
 
@@ -227,10 +230,11 @@ void matrix_convolve(matrix &target, matrix &input, matrix &kernel, bool uneven 
 	const int kernel_col_stop = -(kernel_col_start - 1);
 	float sum;
 	// for each pixel
-	//#pragma omp parallel for private(sum)
-	for (int i = 0, ty = target_pad; i < input_rows; ++i, ++ty) {
+	#pragma omp for
+	for (int i = 0; i < input_rows; ++i) {
+		int ty = target_pad;
 		for (int j = 0, tx = target_pad; j < input_cols; ++j, ++tx) {
-			sum = 0.0f;
+			float sum = 0.0f;
 
 			// convolve
 			for (int k = kernel_row_start, k_row = 0; k < kernel_row_stop; ++k, ++k_row) {
@@ -247,6 +251,7 @@ void matrix_convolve(matrix &target, matrix &input, matrix &kernel, bool uneven 
 			if(accum) target.values[ty * target_cols + tx] += sum;
 			else target.values[ty * target_cols + tx] = sum;
 		}
+		++ty;
 	}
 }
 
@@ -258,12 +263,15 @@ void from_rgba_array_to_rgb_matrices(GLfloat* array, const unsigned int array_wi
 	const unsigned int stride = 4;
 	const unsigned int array_limit = 4 * array_width;
 	int k = 0;
+	#pragma omp for
 	for (int i = 0; i < array_height; ++i) {
-		for (int j = 0, k = 0; j < array_limit; j += stride, ++k) {
-			rgb_mat[0].values[(i + mat_pad) * mat_col + k + mat_pad] = array[i * array_limit + j];
-			rgb_mat[1].values[(i + mat_pad) * mat_col + k + mat_pad] = array[i * array_limit + j + 1];
-			rgb_mat[2].values[(i + mat_pad) * mat_col + k + mat_pad] = array[i * array_limit + j + 2];
+		int l = mat_pad;
+		for (int j = 0, k = mat_pad; j < array_limit; j += stride, ++k) {
+			rgb_mat[0].values[l * mat_col + k] = array[i * array_limit + j];
+			rgb_mat[1].values[l * mat_col + k] = array[i * array_limit + j + 1];
+			rgb_mat[2].values[l * mat_col + k] = array[i * array_limit + j + 2];
 		}
+		++l;
 	}
 }
 
@@ -295,8 +303,36 @@ void matrix_transfer_matrix(matrix &target, matrix &input) {
 	}
 }
 
+void matrix_transfer_matrix_padded_target(matrix &target, matrix &input) {
+	//const unsigned int target_pad = target.padding;
+	//const unsigned int target_row = target.rows;
+	//const unsigned int target_col = target.cols;
+	//const unsigned int target_limit_rows = target.rows - target_pad;
+	//const unsigned int target_limit_cols = target.cols - target_pad;
+	//const unsigned int input_row = input.rows;
+	//const unsigned int input_col = input.cols;
+	////#pragma omp parallel for
+	//for (int i = target_pad, in_y = 0; i < target_limit_rows; ++i, ++in_y) {
+	//	for (int j = target_pad, in_x = 0; j < target_limit_cols; ++j, ++in_x) {
+	//		target.values[i * target_col + j] = input.values[in_y * input_col + in_x];
+	//	}
+	//}
+	const unsigned int input_cols = input.cols;
+	const unsigned int input_rows = input.rows;
+	const unsigned int target_cols = target.cols;
+	const unsigned int target_pad = target.padding;
+	// for each pixel
+	#pragma omp for
+	for (int i = 0; i < input_rows; ++i) {
+		int ty = target_pad;
+		for (int j = 0, tx = target_pad; j < input_cols; ++j, ++tx) {
+			target.values[ty * target_cols + tx] = input.values[i * input_cols + j];
+		}
+		++ty;
+	}
+}
+
 void matrix_average_matrix(matrix &target, matrix &toAdd1, matrix &toAdd2) {
-	if (target.rows != toAdd1.rows || target.cols != toAdd1.cols || target.padding != toAdd1.padding) return;
 	const unsigned int mat_pad = target.padding;
 	const unsigned int mat_row = target.rows - mat_pad;
 	const unsigned int mat_col = target.cols - mat_pad;
@@ -334,10 +370,11 @@ void matrix_mult(matrix &target, float mult) {
 
 void matrix_add(matrix &target, float value) {
 	const unsigned int mat_pad = target.padding;
-	const unsigned int mat_row = target.rows;
+	const unsigned int mat_limit_row = target.rows-mat_pad;
+	const unsigned int mat_limit_col = target.cols - mat_pad;
 	const unsigned int mat_col = target.cols;
-	for (int i = mat_pad; i < mat_row; ++i) {
-		for (int j = mat_pad; j < mat_col; ++j) {
+	for (int i = mat_pad; i < mat_limit_row; ++i) {
+		for (int j = mat_pad; j < mat_limit_col; ++j) {
 			target.values[i * mat_col + j] += value;
 		}
 	}
@@ -371,18 +408,21 @@ void matrix_sub_matrix(matrix &target, matrix &toAdd1, matrix &toAdd2) {
 
 void from_rgb_matrices_to_rgba_array(matrix *rgb_mat, GLfloat* array, const unsigned int array_width, const unsigned int array_height) {
 	// is +1 to offset the 1 layer of padding on the input
-	const unsigned int mat_pad = rgb_mat[0].padding + 1;
+	const unsigned int mat_pad = rgb_mat[0].padding;
 	const unsigned int mat_row = rgb_mat[0].rows; //array_height should be mat_row-2*mat_pad
 	const unsigned int mat_col = rgb_mat[0].cols; //array_width should be (mat_col-2*mat_pad) * components (which is 4 for rgba)
 	const unsigned int stride = 4;
 	const unsigned int array_limit = array_width * stride;
+	#pragma omp for
 	for (int i = 0; i < array_height; ++i) {
-		for (int j = 0, k = 0; j < array_limit; j += stride, ++k) {
-			array[i * array_limit + j] = rgb_mat[0].values[(i + mat_pad) * mat_col + k + mat_pad];
-			array[i * array_limit + j + 1] = rgb_mat[1].values[(i + mat_pad) * mat_col + k + mat_pad];
-			array[i * array_limit + j + 2] = rgb_mat[2].values[(i + mat_pad) * mat_col + k + mat_pad];
+		int l = mat_pad;
+		for (int j = 0, k = mat_pad; j < array_limit; j += stride, ++k) {
+			array[i * array_limit + j] = rgb_mat[0].values[l * mat_col + k];
+			array[i * array_limit + j + 1] = rgb_mat[1].values[l * mat_col + k];
+			array[i * array_limit + j + 2] = rgb_mat[2].values[l * mat_col + k];
 			array[i * array_limit + j + 3] = 1.0f;
 		}
+		++l;
 	}
 
 }

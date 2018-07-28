@@ -21,7 +21,7 @@ public:
 	ConvPyrCPU::ConvPyrCPU(unsigned int width, unsigned int height, unsigned int budget, unsigned int format);
 	ConvPyrCPU::~ConvPyrCPU();
 
-	void ConvPyrCPU::reconstruct_from_gradients(unsigned int &output_texture);
+	void ConvPyrCPU::reconstruct_from_gradients(unsigned int &output_texture, bool compute_laplacian);
 
 private:
 	unsigned int _height, _width, _budget, _no_of_components, _format, _levels;
@@ -35,10 +35,9 @@ private:
 
 	void ConvPyrCPU::init_kernels();
 	void ConvPyrCPU::init_layers();
-	void ConvPyrCPU::distribute_input();
+	void ConvPyrCPU::distribute_input(bool compute_laplacian);
 	void ConvPyrCPU::interleave_output();
 	void ConvPyrCPU::integrate_pyramid();
-	void ConvPyrCPU::debug_integrate_pyramid();
 	void ConvPyrCPU::compute_laplacian();
 	void ConvPyrCPU::clean_up();
 

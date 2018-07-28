@@ -20,7 +20,7 @@ public:
 	Reconstructor::Reconstructor(unsigned int width, unsigned int height, unsigned int budget, unsigned int input_components, mode mode);
 	Reconstructor::~Reconstructor();
 
-	void Reconstructor::reconstruct_from_gradients(unsigned int &output_texture);
+	void Reconstructor::reconstruct_from_gradients(unsigned int &output_texture, bool laplacian);
 
 private:
 	unsigned int _mode;

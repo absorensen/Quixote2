@@ -25,17 +25,17 @@ vec3 GammaCorrect(vec3 color);
 void main()
 {   
 	vec3 color = texture(reconstruction_output, TexCoords).rgb;
-//	FragColor = vec4(color, 1.0);
-//
-
 	if(uncharted_tonemap){
 		color = UnchartedTonemap(color);
 		vec3 whiteScale = 1.0f / UnchartedTonemap(vec3(W));
 		color *= whiteScale;
 	}
-            
+
 	color = vec3(1.0) - exp(-color * exposure);
-	FragColor = vec4(GammaCorrect(color), 1.0f);
+	color = GammaCorrect(color);
+
+            
+	FragColor = vec4(color, 1.0f);
 
 }
 

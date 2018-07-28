@@ -9,6 +9,8 @@
 // settings
 const unsigned int SCR_WIDTH = 512;
 const unsigned int SCR_HEIGHT = 512;
+const float Z_NEAR = 0.1f;
+const float Z_FAR = 100.0f;
 const float ASPECT_RATIO = ((float)SCR_WIDTH) / SCR_HEIGHT;
 static const float scale = 1.0f / static_cast<float>(SCR_WIDTH);
 
@@ -42,14 +44,19 @@ unsigned int forwardFBO, forwardBuffer, forwardDepthTex, forwardDepth, forwardOu
 bool laplace_pipeline = false;
 
 // post-process
-unsigned int postProcessFBO, postProcessBuffer, postProcessDepth, postProcessOutput;
+unsigned int postProcessFBO, postProcessBuffer, postProcessDepth, postProcessOutput, cameraNaiveFBO, cameraNaiveOutput, cameraPhysicalFBO, cameraPhysicalOutput;
 bool post_process_edges = false;
 bool post_process_transparency = true;
 bool visualize_depth = false;
 bool depth_of_field = true;
+bool autofocus = false;
+bool showfocus = false;
+bool manualdof = false;
+cam_mode camera_model = PHYSICAL;
 
 // reconstruction
 unsigned int laplacePostProcessFBO, laplaceProcessBuffer, laplacePostProcessDepth, laplacePostProcessOutput, laplaceReconstructionOutput;
+const int budget = 1;
 bool laplace_edges = false;
 bool laplace_transparency = true;
 //unsigned int source_list;
@@ -127,7 +134,8 @@ int main(int argc, char * argv[]) {
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS);
 
-	Reconstructor* reconstructor = new Reconstructor(SCR_WIDTH, SCR_HEIGHT, 2, GL_RGBA, CONV_PYR_CPU);
+	// init modules
+	Reconstructor* reconstructor = new Reconstructor(SCR_WIDTH, SCR_HEIGHT, budget, GL_RGBA, CONV_PYR_CPU);
 
 	std::string path("Glitter/Sources/");
 	Shader shaderGeometryPass(path + "g_buffer.vert", path + "g_buffer.frag");
@@ -139,6 +147,8 @@ int main(int argc, char * argv[]) {
 	// postprocessing path 1 - if reconstruction==false
 	Shader shaderPostProcess(path + "simple.vert", path + "post_process.frag");
 	Shader shaderOutput(path + "simple.vert", path + "output.frag");
+	Shader shaderNaiveCam(path + "simple.vert", path + "naive_camera.frag");
+	Shader shaderPhysCam(path + "simple.vert", path + "physical_camera.frag");
 
 	// postprocessing path 2 - if reconstruction==true
 	Shader shaderLaplacePostProcess(path + "simple.vert", path + "laplace_post_process.frag");
@@ -334,6 +344,40 @@ int main(int argc, char * argv[]) {
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
 		std::cout << "Framebuffer not complete!" << std::endl;
 
+	// second post-processing buffer - naive camera effects
+	glGenFramebuffers(1, &cameraNaiveFBO);
+	glBindFramebuffer(GL_FRAMEBUFFER, cameraNaiveFBO);
+
+	glGenTextures(1, &cameraNaiveOutput);
+	glBindTexture(GL_TEXTURE_2D, cameraNaiveOutput);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, cameraNaiveOutput, 0);
+	GLuint attachmentsCameraNaive[1] = { GL_COLOR_ATTACHMENT0 };
+	glDrawBuffers(1, attachmentsCameraNaive);
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+		std::cout << "Framebuffer not complete!" << std::endl;
+
+	// second post-processing buffer - physically-based camera effects
+	glGenFramebuffers(1, &cameraPhysicalFBO);
+	glBindFramebuffer(GL_FRAMEBUFFER, cameraPhysicalFBO);
+
+	glGenTextures(1, &cameraPhysicalOutput);
+	glBindTexture(GL_TEXTURE_2D, cameraPhysicalOutput);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, cameraPhysicalOutput, 0);
+	GLuint attachmentsCameraPhysical[1] = { GL_COLOR_ATTACHMENT0 };
+	glDrawBuffers(1, attachmentsCameraPhysical);
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+		std::cout << "Framebuffer not complete!" << std::endl;
+
 	// setup reconstruction post processing
 	// ------------------------------------
 	glGenFramebuffers(1, &laplacePostProcessFBO);
@@ -423,20 +467,38 @@ int main(int argc, char * argv[]) {
 	shaderPostProcess.setInt("deferredOutput", 0);
 	shaderPostProcess.setInt("forwardOutput", 1);
 	shaderPostProcess.setInt("forwardDepthTex", 2);
+	shaderPostProcess.setInt("height", SCR_HEIGHT);
+	shaderPostProcess.setInt("width", SCR_WIDTH);
 	shaderPostProcess.setBool("edges", post_process_edges);
 	shaderPostProcess.setBool("transparency", post_process_transparency);
 	shaderPostProcess.setBool("viz_depth", visualize_depth);
 
+	shaderNaiveCam.use();
+	shaderNaiveCam.setInt("postProcessOutput", 0);
+	shaderNaiveCam.setInt("forwardDepthTex", 1);
+	shaderNaiveCam.setFloat("focus", focus);
+	shaderNaiveCam.setBool("depth_of_field", depth_of_field);
+	shaderNaiveCam.setInt("height", SCR_HEIGHT);
+	shaderNaiveCam.setInt("width", SCR_WIDTH);
+
+	shaderPhysCam.use();
+	shaderPhysCam.setInt("postProcessOutput", 0);
+	shaderPhysCam.setInt("forwardDepthTex", 1);
+	shaderPhysCam.setFloat("focalDepth", focus*2.0f);
+	shaderPhysCam.setBool("depth_of_field", depth_of_field);
+	shaderPhysCam.setInt("height", SCR_HEIGHT);
+	shaderPhysCam.setInt("width", SCR_WIDTH);
+	shaderPhysCam.setFloat("znear", Z_NEAR);
+	shaderPhysCam.setFloat("zfar", Z_FAR);
+	shaderPhysCam.setBool("autofocus", autofocus);
+	shaderPhysCam.setBool("showfocus", showfocus);
+	shaderPhysCam.setBool("manualdof", manualdof);
+
 	shaderOutput.use();
-	shaderOutput.setInt("postProcessOutput", 0);
-	shaderOutput.setInt("forwardDepthTex", 1);
+	shaderOutput.setInt("inputTexture", 0);
 	shaderOutput.setFloat("exposure", exposure);
 	shaderOutput.setVec3("gamma", gamma);
-	shaderOutput.setFloat("focus", focus);
-	shaderOutput.setBool("uncharted_tonemap", uncharted_tonemap);
-	shaderOutput.setBool("depth_of_field", depth_of_field);
-	shaderOutput.setInt("height", SCR_HEIGHT);
-	shaderOutput.setBool("width", SCR_WIDTH);
+
 
 	double gBufferTime, ssaoTime, deferredTime, forwardTime, postProcessTime, reconstructionTime, outputTime;
 	int report = 0;
@@ -463,7 +525,7 @@ int main(int argc, char * argv[]) {
 		glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-		glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
+		glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, Z_NEAR, Z_FAR);
 		glm::mat4 view = camera.GetViewMatrix();
 		glm::mat4 model = glm::mat4(1.0f);
 		shaderGeometryPass.use();
@@ -572,7 +634,7 @@ int main(int argc, char * argv[]) {
 			renderCube();
 		}
 		glBindTexture(GL_TEXTURE_2D, forwardDepthTex);
-		glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, 512, 512);
+		glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, SCR_WIDTH, SCR_HEIGHT);
 
 		t.stop();
 		forwardTime = t.get_time();
@@ -599,7 +661,7 @@ int main(int argc, char * argv[]) {
 			// ---------------------
 			// input none, but reads pixels from bound framebuffer
 			// output laplaceReconstructionOutput
-			reconstructor->reconstruct_from_gradients(laplaceReconstructionOutput);
+			reconstructor->reconstruct_from_gradients(laplaceReconstructionOutput, !laplace_edges);
 
 
 			// output
@@ -611,7 +673,7 @@ int main(int argc, char * argv[]) {
 			shaderLaplaceReconstructionOutput.use();
 			shaderLaplaceReconstructionOutput.setBool("uncharted_tonemap", uncharted_tonemap);
 			glActiveTexture(GL_TEXTURE0);
-			glBindTexture(GL_TEXTURE_2D, laplaceReconstructionOutput);
+			glBindTexture(GL_TEXTURE_2D, laplacePostProcessOutput);
 			renderQuad();
 			glEnable(GL_DEPTH_TEST);
 
@@ -630,25 +692,67 @@ int main(int argc, char * argv[]) {
 			glBindTexture(GL_TEXTURE_2D, forwardOutput);
 			glActiveTexture(GL_TEXTURE2);
 			glBindTexture(GL_TEXTURE_2D, forwardDepthTex);
-			shaderPostProcess.setBool("edges", post_process_edges);
+			shaderPostProcess.setBool("edges", laplace_edges);
 			shaderPostProcess.setBool("transparency", post_process_transparency);
 			shaderPostProcess.setBool("viz_depth", visualize_depth);
 			renderQuad();
+
+			if (camera_model == NAIVE) {
+				glBindFramebuffer(GL_FRAMEBUFFER, cameraNaiveFBO);
+				shaderNaiveCam.use();
+				glClear(GL_COLOR_BUFFER_BIT);
+				glActiveTexture(GL_TEXTURE0);
+				glBindTexture(GL_TEXTURE_2D, postProcessOutput);
+				glActiveTexture(GL_TEXTURE1);
+				glBindTexture(GL_TEXTURE_2D, forwardDepthTex);
+				shaderNaiveCam.setInt("postProcessOutput", 0);
+				shaderNaiveCam.setInt("forwardDepthTex", 1);
+				shaderNaiveCam.setFloat("focus", focus);
+				shaderNaiveCam.setBool("depth_of_field", depth_of_field);
+				shaderNaiveCam.setInt("height", SCR_HEIGHT);
+				shaderNaiveCam.setInt("width", SCR_WIDTH);
+				renderQuad();
+			} else if (camera_model == PHYSICAL) {
+				glBindFramebuffer(GL_FRAMEBUFFER, cameraPhysicalFBO);
+				shaderPhysCam.use();
+				glClear(GL_COLOR_BUFFER_BIT);
+				glActiveTexture(GL_TEXTURE0);
+				glBindTexture(GL_TEXTURE_2D, postProcessOutput);
+				glActiveTexture(GL_TEXTURE1);
+				glBindTexture(GL_TEXTURE_2D, forwardDepthTex);
+				shaderPhysCam.setInt("postProcessOutput", 0);
+				shaderPhysCam.setInt("forwardDepthTex", 1);
+				shaderPhysCam.setFloat("focalDepth", focus*8.0f);
+				shaderPhysCam.setBool("depth_of_field", depth_of_field);
+				shaderPhysCam.setBool("autofocus", autofocus);
+				shaderPhysCam.setBool("showfocus", showfocus);
+				shaderPhysCam.setBool("manualdof", manualdof);
+				shaderPhysCam.setInt("height", SCR_HEIGHT);
+				shaderPhysCam.setInt("width", SCR_WIDTH);
+				shaderPhysCam.setFloat("znear", Z_NEAR);
+				shaderPhysCam.setFloat("zfar", Z_FAR);
+				renderQuad();
+			}
 
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 			glDisable(GL_DEPTH_TEST);
 			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 			shaderOutput.use();
-			shaderOutput.setFloat("focus", focus);
 			shaderOutput.setBool("uncharted_tonemap", uncharted_tonemap);
-			shaderOutput.setBool("depth_of_field", depth_of_field);
-			shaderOutput.setInt("height", SCR_HEIGHT);
-			shaderOutput.setInt("width", SCR_WIDTH);
-			glActiveTexture(GL_TEXTURE0);
-			glBindTexture(GL_TEXTURE_2D, postProcessOutput);
-			glActiveTexture(GL_TEXTURE1);
-			glBindTexture(GL_TEXTURE_2D, forwardDepthTex);
+
+			if (camera_model == NAIVE) {
+				glActiveTexture(GL_TEXTURE0);
+				glBindTexture(GL_TEXTURE_2D, cameraNaiveOutput);
+			}
+			else if (camera_model == PHYSICAL) {
+				glActiveTexture(GL_TEXTURE0);
+				glBindTexture(GL_TEXTURE_2D, cameraPhysicalOutput);
+			}
+			else if (camera_model == NO_CAM_MODEL) {
+				glActiveTexture(GL_TEXTURE0);
+				glBindTexture(GL_TEXTURE_2D, postProcessOutput);
+			}
 			renderQuad();
 			glEnable(GL_DEPTH_TEST);
 		}
@@ -829,6 +933,73 @@ void process_input(GLFWwindow* window) {
 	{
 		print_timing = !print_timing;
 		std::cout << "print timing equals " << print_timing << "\n\n";
+	}
+
+	if (glfwGetKey(window, GLFW_KEY_Z) == GLFW_PRESS)
+	{
+		visualize_depth = !visualize_depth;
+		std::cout << "visualize_depth: ";
+		if (visualize_depth) std::cout << "on" << std::endl;
+		else std::cout << "off" << std::endl;
+	}
+
+	if (glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS)
+	{
+		autofocus = !autofocus;
+		std::cout << "autofocus: ";
+		if (autofocus) std::cout << "on" << std::endl;
+		else std::cout << "off" << std::endl;
+	}
+	if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS)
+	{
+		showfocus = !showfocus;
+		std::cout << "showfocus: ";
+		if (showfocus) std::cout << "on" << std::endl;
+		else std::cout << "off" << std::endl;
+	}
+	if (glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS)
+	{
+		manualdof = !manualdof;
+		std::cout << "manualdof: ";
+		if (manualdof) std::cout << "on" << std::endl;
+		else std::cout << "off" << std::endl;
+	}
+
+	if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS)
+	{
+		depth_of_field = !depth_of_field;
+		std::cout << "depth_of_field: ";
+		if (depth_of_field) std::cout << "on" << std::endl;
+		else std::cout << "off" << std::endl;
+	}
+
+	if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+	{
+		laplace_edges = !laplace_edges;
+		std::cout << "laplace_edges: ";
+		if (laplace_edges) std::cout << "on" << std::endl;
+		else std::cout << "off" << std::endl;
+	}
+
+	if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS)
+	{
+		switch (camera_model) {
+		case(0): // No camera model
+			camera_model = cam_mode(1);
+			std::cout << "Switched to Naive Camera Model" << std::endl;
+			break;
+
+		case(1): // Naive
+			camera_model = cam_mode(2);
+			std::cout << "Switched to Physical Camera Model" << std::endl;
+			break;
+
+
+		case(2): // Physical
+			camera_model = cam_mode(0);
+			std::cout << "Switched to No Camera Model" << std::endl;
+			break;
+		}
 	}
 }
 

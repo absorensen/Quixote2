@@ -34,6 +34,9 @@
 #include "os_timer.h"
 #include "reconstructor.hpp"
 
+enum cam_mode { NO_CAM_MODEL, NAIVE, PHYSICAL };
+
+
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void process_input(GLFWwindow* window);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
