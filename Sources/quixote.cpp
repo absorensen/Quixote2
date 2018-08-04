@@ -41,7 +41,7 @@ unsigned int forwardFBO, forwardBuffer, forwardDepthTex, forwardDepth, forwardOu
 
 
 // switch between primary and laplacian domain post processing pipelines
-bool laplace_pipeline = false;
+bool laplace_pipeline = true;
 
 // post-process
 unsigned int postProcessFBO, postProcessBuffer, postProcessDepth, postProcessOutput, cameraNaiveFBO, cameraNaiveOutput, cameraPhysicalFBO, cameraPhysicalOutput;
@@ -51,13 +51,14 @@ bool visualize_depth = false;
 bool depth_of_field = true;
 bool autofocus = false;
 bool showfocus = false;
-bool manualdof = false;
-cam_mode camera_model = PHYSICAL;
+bool manualdof = true;
+bool ssaoViz = false;
+cam_mode camera_model = NO_CAM_MODEL;
 
 // reconstruction
 unsigned int laplacePostProcessFBO, laplaceProcessBuffer, laplacePostProcessDepth, laplacePostProcessOutput, laplaceReconstructionOutput;
 const int budget = 1;
-bool laplace_edges = false;
+bool laplace_edges = true;
 bool laplace_transparency = true;
 //unsigned int source_list;
 //Shader g2r_prog;
@@ -291,13 +292,6 @@ int main(int argc, char * argv[]) {
 	glGenFramebuffers(1, &forwardFBO);
 	glBindFramebuffer(GL_FRAMEBUFFER, forwardFBO);
 
-	//glGenTextures(1, &forwardBuffer);
-	//glBindTexture(GL_TEXTURE_2D, forwardBuffer);
-	//glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
-	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	//glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, forwardBuffer, 0);
-
 	glGenTextures(1, &forwardOutput);
 	glBindTexture(GL_TEXTURE_2D, forwardOutput);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
@@ -398,10 +392,6 @@ int main(int argc, char * argv[]) {
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
 		std::cout << "Framebuffer not complete!" << std::endl;
 
-	// reconstruction - fft
-	//FFT* fft = new FFT(SCR_WIDTH, SCR_HEIGHT, reconstructionPostProcessOutput);
-	//FFT* fft = new FFT(SCR_WIDTH, SCR_HEIGHT);
-
 	glGenTextures(1, &laplaceReconstructionOutput);
 	glBindTexture(GL_TEXTURE_2D, laplaceReconstructionOutput);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
@@ -424,9 +414,9 @@ int main(int argc, char * argv[]) {
 		float zPos = ((rand() % 100) / 100.0f) * 6.0f - 3.0f;
 		lightPositions.push_back(glm::vec3(xPos, yPos, zPos));
 		// also calculate random color
-		float rColor = 2.0f * ((rand() % 100) / 200.0f) + 0.5f; // between 0.5 and 1.0
-		float gColor = 2.0f * ((rand() % 100) / 200.0f) + 0.5f; // between 0.5 and 1.0
-		float bColor = 2.0f * ((rand() % 100) / 200.0f) + 0.5f; // between 0.5 and 1.0
+		float rColor = 8.0f * ((rand() % 100) / 200.0f) + 0.5f; // between 0.5 and 1.0
+		float gColor = 8.0f * ((rand() % 100) / 200.0f) + 0.5f; // between 0.5 and 1.0
+		float bColor = 8.0f * ((rand() % 100) / 200.0f) + 0.5f; // between 0.5 and 1.0
 		lightColors.push_back(glm::vec3(rColor, gColor, bColor));
 	}
 	lightColors[2] *= 5.0f;
@@ -496,6 +486,8 @@ int main(int argc, char * argv[]) {
 
 	shaderOutput.use();
 	shaderOutput.setInt("inputTexture", 0);
+	shaderOutput.setInt("ssaoTexture", 0);
+	shaderOutput.setBool("ssaoViz", ssaoViz);
 	shaderOutput.setFloat("exposure", exposure);
 	shaderOutput.setVec3("gamma", gamma);
 
@@ -653,6 +645,8 @@ int main(int argc, char * argv[]) {
 			glBindTexture(GL_TEXTURE_2D, deferredOutput);
 			glActiveTexture(GL_TEXTURE1);
 			glBindTexture(GL_TEXTURE_2D, forwardOutput);
+			shaderLaplacePostProcess.setInt("height", SCR_HEIGHT);
+			shaderLaplacePostProcess.setInt("width", SCR_WIDTH);
 			shaderLaplacePostProcess.setBool("edges", laplace_edges);
 			shaderLaplacePostProcess.setBool("transparency", laplace_transparency);
 			renderQuad();
@@ -661,8 +655,8 @@ int main(int argc, char * argv[]) {
 			// ---------------------
 			// input none, but reads pixels from bound framebuffer
 			// output laplaceReconstructionOutput
-			reconstructor->reconstruct_from_gradients(laplaceReconstructionOutput, !laplace_edges);
 
+			reconstructor->reconstruct_from_gradients(laplaceReconstructionOutput);
 
 			// output
 			// ------
@@ -671,9 +665,12 @@ int main(int argc, char * argv[]) {
 			glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 			shaderLaplaceReconstructionOutput.use();
+			shaderLaplaceReconstructionOutput.setVec3("gamma", gamma);
+			shaderLaplaceReconstructionOutput.setFloat("exposure", exposure);
 			shaderLaplaceReconstructionOutput.setBool("uncharted_tonemap", uncharted_tonemap);
 			glActiveTexture(GL_TEXTURE0);
-			glBindTexture(GL_TEXTURE_2D, laplacePostProcessOutput);
+			//glBindTexture(GL_TEXTURE_2D, laplacePostProcessOutput);
+			glBindTexture(GL_TEXTURE_2D, laplaceReconstructionOutput);
 			renderQuad();
 			glEnable(GL_DEPTH_TEST);
 
@@ -711,6 +708,8 @@ int main(int argc, char * argv[]) {
 				shaderNaiveCam.setBool("depth_of_field", depth_of_field);
 				shaderNaiveCam.setInt("height", SCR_HEIGHT);
 				shaderNaiveCam.setInt("width", SCR_WIDTH);
+				shaderNaiveCam.setFloat("znear", Z_NEAR);
+				shaderNaiveCam.setFloat("zfar", Z_FAR);
 				renderQuad();
 			} else if (camera_model == PHYSICAL) {
 				glBindFramebuffer(GL_FRAMEBUFFER, cameraPhysicalFBO);
@@ -740,8 +739,13 @@ int main(int argc, char * argv[]) {
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 			shaderOutput.use();
 			shaderOutput.setBool("uncharted_tonemap", uncharted_tonemap);
-
-			if (camera_model == NAIVE) {
+			shaderOutput.setBool("ssaoViz", ssaoViz);
+/*
+			if (laplace_pipeline) {
+				glActiveTexture(GL_TEXTURE0);
+				glBindTexture(GL_TEXTURE_2D, laplacePostProcessOutput);
+			}
+			else*/ if (camera_model == NAIVE) {
 				glActiveTexture(GL_TEXTURE0);
 				glBindTexture(GL_TEXTURE_2D, cameraNaiveOutput);
 			}
@@ -753,14 +757,18 @@ int main(int argc, char * argv[]) {
 				glActiveTexture(GL_TEXTURE0);
 				glBindTexture(GL_TEXTURE_2D, postProcessOutput);
 			}
+			if (ssaoViz) {
+				glActiveTexture(GL_TEXTURE1);
+				glBindTexture(GL_TEXTURE_2D, ssaoBufferBlur);
+			}
 			renderQuad();
 			glEnable(GL_DEPTH_TEST);
-		}
 
+
+		}
 
 		t.stop();
 		postProcessTime = t.get_time();
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		// ---------------
 
 		glfwSwapBuffers(window);
@@ -978,6 +986,14 @@ void process_input(GLFWwindow* window) {
 		laplace_edges = !laplace_edges;
 		std::cout << "laplace_edges: ";
 		if (laplace_edges) std::cout << "on" << std::endl;
+		else std::cout << "off" << std::endl;
+	}
+
+	if (glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS)
+	{
+		ssaoViz = !ssaoViz;
+		std::cout << "ssaoViz: ";
+		if (ssaoViz) std::cout << "on" << std::endl;
 		else std::cout << "off" << std::endl;
 	}
 

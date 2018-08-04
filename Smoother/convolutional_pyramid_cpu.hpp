@@ -21,7 +21,7 @@ public:
 	ConvPyrCPU::ConvPyrCPU(unsigned int width, unsigned int height, unsigned int budget, unsigned int format);
 	ConvPyrCPU::~ConvPyrCPU();
 
-	void ConvPyrCPU::reconstruct_from_gradients(unsigned int &output_texture);
+	void ConvPyrCPU::reconstruct_from_gradients(unsigned int &output_texture, bool compute_laplacian);
 
 private:
 	unsigned int _height, _width, _budget, _no_of_components, _format, _levels;

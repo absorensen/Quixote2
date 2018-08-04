@@ -37,12 +37,12 @@ void main()
 			if(transparency) texSamples[i] = texSamples[i].x > 0 && texSamples[i].y > 0 && texSamples[i].z > 0 ? texSamples[i] + texSamples[i] * deferred : deferred;
 			else texSamples[i] = texSamples[i].x > 0 && texSamples[i].y > 0 && texSamples[i].z > 0 ? texSamples[i] : deferred;
 		}	
-
-		col -= 4.0*texSamples[0];
-		col = texSamples[1];
-		col = texSamples[2];
-		col = texSamples[3];
-		col = texSamples[4];
+		float sign = -1.0;
+		col = sign*-4.0*texSamples[0];
+		col += sign*texSamples[1];
+		col += sign*texSamples[2];
+		col += sign*texSamples[3];
+		col += sign*texSamples[4];
 
 	} else {
 		col = vec3(texture(forwardOutput, TexCoords.st));

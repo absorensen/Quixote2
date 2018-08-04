@@ -24,15 +24,15 @@ uniform bool manualdof; //manual dof calculation
 vec2 texel = vec2(1.0/width, 1.0/height);
 
 float focalLength = 45.0;
-float fstop = 1.4;
+float fstop = 2.8;
 
-int samples = 3; //samples on the first ring
-int rings = 3; //ring count
+int samples = 6; //samples on the first ring
+int rings = 5; //ring count
 
 float ndofstart = 1.0; //near dof blur start
-float ndofdist = 1.0; //near dof blur falloff distance
+float ndofdist = 2.0; //near dof blur falloff distance
 float fdofstart = 1.0; //far dof blur start
-float fdofdist = 1.5; //far dof blur falloff distance
+float fdofdist = 3.0; //far dof blur falloff distance
 
 float CoC = 0.03;//circle of confusion size in mm (35mm film = 0.03mm)
 
@@ -59,7 +59,7 @@ float dbsize = 1.25; //depthblursize
 
 
 
-bool pentagon = true; //use pentagon as bokeh shape?
+bool pentagon = false; //use pentagon as bokeh shape?
 float feather = 0.4; //pentagon shape feather
 
 vec3 phys_dof();

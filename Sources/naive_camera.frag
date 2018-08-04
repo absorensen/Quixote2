@@ -13,11 +13,18 @@ uniform int height;
 uniform int width;
 uniform float focus;
 uniform bool depth_of_field;
+uniform float znear;
+uniform float zfar;
 
 const float blurclamp = 3.0;
 const float bias = 0.6; 
+const float max_sample_depth = 60.0;
+const float aspectratio = width/height;
+const vec2 aspectcorrect = vec2(1.0,aspectratio);
 
-vec3 DepthOfField(float factor);
+vec3 DepthOfField(float depth, float factor);
+float Linearize(float depth);
+vec4 cal_sample(vec2 coord, vec2 dofblur, float depth);
 
 void main()
 {   
@@ -25,7 +32,7 @@ void main()
 	float depth1 = texture2D(forwardDepthTex, TexCoords.st ).r;
     float factor = ( depth1 - focus );
 	if(depth_of_field && (factor > 0.01 || factor < -0.01)){
-		color = DepthOfField(factor);
+		color = DepthOfField(depth1, factor);
 	} else {
 		color = texture(postProcessOutput, TexCoords.st).rgb;
 	}
@@ -33,54 +40,75 @@ void main()
 	cameraOutput = color;
 }
 
-vec3 DepthOfField(float factor){
+float linearize(float depth)
+{
+	return -zfar * znear / (depth * (zfar - znear) - zfar);
+}
 
-		float aspectratio = width/height;
-        vec2 aspectcorrect = vec2(1.0,aspectratio);
-        vec2 dofblur = vec2 (clamp( factor * bias, -blurclamp, blurclamp ));
+vec4 cal_sample(vec2 coord, vec2 dofblur, float depth){
+	coord = (vec2( coord )*aspectcorrect) * dofblur;
+    vec4 samp = texture2D(postProcessOutput, TexCoords.st + coord);
+	if (abs( linearize(texture2D(forwardDepthTex, TexCoords.st + coord ).r) - depth) < max_sample_depth) return samp;
+	else return texture2D(postProcessOutput, TexCoords.st);
+
+}
+
+vec3 DepthOfField(float depth, float factor){
+        vec2 blur = vec2 (clamp( factor * bias, -blurclamp, blurclamp ));
         vec4 col = vec4(0.0);
-       
-        col += texture2D(postProcessOutput, TexCoords.st);
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( 0.0,0.4 )*aspectcorrect) * dofblur);
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( 0.15,0.37 )*aspectcorrect) * dofblur);
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( 0.29,0.29 )*aspectcorrect) * dofblur);
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( -0.37,0.15 )*aspectcorrect) * dofblur);       
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( 0.4,0.0 )*aspectcorrect) * dofblur);   
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( 0.37,-0.15 )*aspectcorrect) * dofblur);       
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( 0.29,-0.29 )*aspectcorrect) * dofblur);       
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( -0.15,-0.37 )*aspectcorrect) * dofblur);
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( 0.0,-0.4 )*aspectcorrect) * dofblur); 
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( -0.15,0.37 )*aspectcorrect) * dofblur);
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( -0.29,0.29 )*aspectcorrect) * dofblur);
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( 0.37,0.15 )*aspectcorrect) * dofblur); 
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( -0.4,0.0 )*aspectcorrect) * dofblur); 
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( -0.37,-0.15 )*aspectcorrect) * dofblur);       
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( -0.29,-0.29 )*aspectcorrect) * dofblur);       
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( 0.15,-0.37 )*aspectcorrect) * dofblur);
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( 0.15,0.37 )*aspectcorrect) * dofblur*0.9);
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( -0.37,0.15 )*aspectcorrect) * dofblur*0.9);           
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( 0.37,-0.15 )*aspectcorrect) * dofblur*0.9);           
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( -0.15,-0.37 )*aspectcorrect) * dofblur*0.9);
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( -0.15,0.37 )*aspectcorrect) * dofblur*0.9);
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( 0.37,0.15 )*aspectcorrect) * dofblur*0.9);            
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( -0.37,-0.15 )*aspectcorrect) * dofblur*0.9);   
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( 0.15,-0.37 )*aspectcorrect) * dofblur*0.9);   
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( 0.29,0.29 )*aspectcorrect) * dofblur*0.7);
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( 0.4,0.0 )*aspectcorrect) * dofblur*0.7);       
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( 0.29,-0.29 )*aspectcorrect) * dofblur*0.7);   
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( 0.0,-0.4 )*aspectcorrect) * dofblur*0.7);     
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( -0.29,0.29 )*aspectcorrect) * dofblur*0.7);
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( -0.4,0.0 )*aspectcorrect) * dofblur*0.7);     
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( -0.29,-0.29 )*aspectcorrect) * dofblur*0.7);   
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( 0.0,0.4 )*aspectcorrect) * dofblur*0.7);
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( 0.29,0.29 )*aspectcorrect) * dofblur*0.4);
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( 0.4,0.0 )*aspectcorrect) * dofblur*0.4);       
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( 0.29,-0.29 )*aspectcorrect) * dofblur*0.4);   
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( 0.0,-0.4 )*aspectcorrect) * dofblur*0.4);     
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( -0.29,0.29 )*aspectcorrect) * dofblur*0.4);
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( -0.4,0.0 )*aspectcorrect) * dofblur*0.4);     
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( -0.29,-0.29 )*aspectcorrect) * dofblur*0.4);   
-        col += texture2D(postProcessOutput, TexCoords.st + (vec2( 0.0,0.4 )*aspectcorrect) * dofblur*0.4);       
-                       
+		depth = linearize(depth);
+
+		col += texture2D(postProcessOutput, TexCoords.st);
+
+		vec2 dofblur = blur;
+		col += cal_sample(vec2( 0.0,0.4 ), dofblur, depth);
+		col += cal_sample(vec2( 0.15,0.37 ), dofblur, depth);
+		col += cal_sample(vec2( 0.29,0.29 ), dofblur, depth);
+		col += cal_sample(vec2( -0.37,0.15 ), dofblur, depth);
+		col += cal_sample(vec2( 0.4,0.0 ), dofblur, depth);
+		col += cal_sample(vec2( 0.37,-0.15 ), dofblur, depth);
+		col += cal_sample(vec2( 0.29,-0.29 ), dofblur, depth);
+		col += cal_sample(vec2( -0.15,-0.37 ), dofblur, depth);
+		col += cal_sample(vec2( 0.0,-0.4 ), dofblur, depth);
+		col += cal_sample(vec2( -0.15,0.37 ), dofblur, depth);
+		col += cal_sample(vec2( -0.29,0.29 ), dofblur, depth);
+		col += cal_sample(vec2( 0.37,0.15 ), dofblur, depth);
+		col += cal_sample(vec2( -0.4,0.0 ), dofblur, depth);
+        col += cal_sample(vec2( -0.37,-0.15 ), dofblur, depth);
+		col += cal_sample(vec2( -0.29,-0.29 ), dofblur, depth);
+		col += cal_sample(vec2( 0.15,0.37 ), dofblur, depth);
+		col += cal_sample(vec2( 0.15,-0.37 ), dofblur, depth);
+
+		dofblur = blur * 0.9;
+		col += cal_sample(vec2( 0.15,0.37 ), dofblur, depth);
+		col += cal_sample(vec2( 0.15,-0.37 ), dofblur, depth);
+		col += cal_sample(vec2( -0.15,-0.37 ), dofblur, depth);
+		col += cal_sample(vec2( -0.15,0.37 ), dofblur, depth);
+		col += cal_sample(vec2( 0.15,-0.37 ), dofblur, depth);
+		col += cal_sample(vec2( -0.37,0.15 ), dofblur, depth);
+		col += cal_sample(vec2( 0.37,0.15 ), dofblur, depth);
+		col += cal_sample(vec2( 0.37,-0.15 ), dofblur, depth);
+		col += cal_sample(vec2( -0.37,-0.15 ), dofblur, depth);
+		
+		dofblur = blur * 0.7;
+		col += cal_sample(vec2( 0.29,0.29 ), dofblur, depth);
+		col += cal_sample(vec2( -0.29,0.29 ), dofblur, depth);
+		col += cal_sample(vec2( 0.29,-0.29 ), dofblur, depth);
+		col += cal_sample(vec2( -0.29,-0.29 ), dofblur, depth);
+		col += cal_sample(vec2( 0.4,0.0 ), dofblur, depth);
+		col += cal_sample(vec2( -0.4,0.0 ), dofblur, depth);
+		col += cal_sample(vec2( 0.0,-0.4 ), dofblur, depth);
+		col += cal_sample(vec2( 0.0,0.4 ), dofblur, depth);
+
+		dofblur = blur * 0.4;
+		col += cal_sample(vec2( 0.29,0.29 ), dofblur, depth);
+		col += cal_sample(vec2( -0.29,0.29 ), dofblur, depth);
+		col += cal_sample(vec2( 0.29,-0.29 ), dofblur, depth);
+		col += cal_sample(vec2( -0.29,-0.29 ), dofblur, depth);
+		col += cal_sample(vec2( 0.4,0.0 ), dofblur, depth);
+		col += cal_sample(vec2( -0.4,0.0 ), dofblur, depth);
+		col += cal_sample(vec2( 0.0,-0.4 ), dofblur, depth);
+		col += cal_sample(vec2( 0.0,0.4 ), dofblur, depth);
+
         return col.xyz/41.0;
 }

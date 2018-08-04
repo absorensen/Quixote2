@@ -22,7 +22,7 @@ void matrix_deallocate(matrix &mat);
 void array_set_all_values(GLfloat* array, unsigned int length, float value);
 void array_mult_all_values(GLfloat* array, unsigned int length, float value);
 unsigned int check_format_length(unsigned int format);
-void matrix_convolve(matrix &target, matrix &input, matrix &kernel, bool ignoreTargetPad, bool accum);
+void matrix_convolve(matrix &target, matrix &input, matrix &kernel, bool accum);
 void matrix_convolve_padded_to_non(matrix &target, matrix &input, matrix &kernel);
 void matrix_add_matrix(matrix &target, matrix &toAdd1, matrix &toAdd2);
 void matrix_transfer_matrix(matrix &target, matrix &input);
@@ -37,8 +37,10 @@ void matrix_mult(matrix &target, float mult);
 void matrix_mult_matrix(matrix &target, matrix &toAdd1, matrix &toAdd2);
 void matrix_average_matrix(matrix &target, matrix &toAdd1, matrix &toAdd2);
 void matrix_downsample_half(matrix &target, matrix &input);
+void matrix_transfer_padded_to_non(matrix &target, matrix &input);
+void matrix_transfer_out(matrix &target, matrix &input, unsigned int pad);
 void matrix_upsample_simple_double(matrix &target, matrix &input);
-void matrix_upsample_zeros_double(matrix &target, matrix &input, unsigned int pad);
+void matrix_upsample_zeros_double(matrix &target, matrix &input);
 inline float bilerp(const float x, const float alpha, const float y, const float beta) { return x * alpha + y * beta; }
 inline float quadlerp(const float a, const float alpha, const float b, const float beta, const float c, const float gamma, const float d, const float delta) { return a * alpha + b * beta + c * gamma + d * delta; }
 

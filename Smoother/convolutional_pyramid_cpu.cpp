@@ -1,6 +1,6 @@
 #include "convolutional_pyramid_cpu.hpp"
 
-void ConvPyrCPU::reconstruct_from_gradients(unsigned int &output_texture) {
+void ConvPyrCPU::reconstruct_from_gradients(unsigned int &output_texture, bool laplacian) {
 
 	const unsigned int type = GL_FLOAT;
 	// transfer input texture to matrix
@@ -36,7 +36,7 @@ void ConvPyrCPU::distribute_input() {
 }
 
 void ConvPyrCPU::interleave_output() {
-	//from_rgb_matrices_to_rgba_array(_input, _data, _width, _height);
+	//from_rgb_matrices_to_rgba_array(_layers[0]._a, _data, _width, _height);
 	from_rgb_matrices_to_rgba_array(_layers[0]._b_conv, _data, _width, _height);
 }
 
@@ -76,12 +76,12 @@ void ConvPyrCPU::integrate_pyramid() {
 		matrix_convolve(_layers[_levels - 1]._b_conv[color], _layers[_levels - 1]._a[color], _g, false, false);
 
 		// up
-		for (int layer = _levels - 2; layer >= 0; --layer) {
-			matrix_upsample_zeros_double(_layers[layer]._b[color], _layers[layer + 1]._b_conv[color], _h1.cols);
-			matrix_convolve(_layers[layer]._b_conv[color], _layers[layer]._a[color], _g, false, false);
-			matrix_convolve(_layers[layer]._b_conv[color], _layers[layer]._b[color], _h2, false, true);
+		for (int layer = _levels - 2; layer > -1; --layer) {
+			matrix_upsample_zeros_double(_layers[layer]._b[color], _layers[layer + 1]._b_conv[color]);
+			//matrix_convolve_padded_to_non(_layers[layer]._b_conv[color], _layers[layer]._a[color], _g);
+			//matrix_convolve(_layers[layer]._b_conv[color], _layers[layer]._a[color], _g, false, false);
+			matrix_convolve(_layers[layer]._b_conv[color], _layers[layer]._b[color], _h2, false, false);
 		}
-		//matrix_transfer_matrix(_input[color], _layers[0]._b_conv[color]);
 
 		// adjust
 		//matrix_mean(_layers[0]._b_conv[color], mean_re[color]);
@@ -99,7 +99,7 @@ ConvPyrCPU::ConvPyrCPU(unsigned int width, unsigned int height, unsigned int bud
 	_no_of_components = check_format_length(format);
 	_levels = (unsigned int)ceil(log2(_height > _width ? _height : _width));
 	_levels = _levels > 0 ? _levels : 2;
-	_levels = 9;
+	_levels = 3;
 	_pad_value = 0.0f;
 	_init_value = 0.0f;
 
@@ -215,11 +215,11 @@ void ConvPyrCPU::init_layers() {
 	const bool init_values = true;
 	const float init_value = _init_value;
 	const int input_pad = 1;
-	//for (int color = 0; color < 3; ++color) {
-	//	matrix_init(_input[color], height, width, init_values, init_value, input_pad, _pad_value);
-	//}
-	//height += 2 * input_pad;
-	//width += 2 * input_pad;
+	for (int color = 0; color < 3; ++color) {
+		matrix_init(_input[color], height, width, init_values, init_value, input_pad, _pad_value);
+	}
+	height += 2 * input_pad;
+	width += 2 * input_pad;
 	for (int i = 0; i < _levels; ++i) {
 		for (int color = 0; color < 3; ++color) {
 			//pad_value = _orig_mean[color];
@@ -228,30 +228,7 @@ void ConvPyrCPU::init_layers() {
 			matrix_init(_layers[i]._b[color], height, width, init_values, init_value, pad, _pad_value);
 			matrix_init(_layers[i]._b_conv[color], height, width, init_values, init_value, pad, _pad_value);
 		}
-		//height = height / 2 + 2 * pad;
-		//width = width / 2 + 2 * pad;
-		height = _layers[i]._a[0].rows / 2;//(height / 2);
-		width = _layers[i]._a[0].cols / 2;//(width / 2);
+		height = height / 2 + 2 * pad;
+		width = width / 2 + 2 * pad;
 	}
-	//for (int i = 0; i < _levels; ++i) {
-	//	for (int color = 0; color < 3; ++color) {
-	//		//pad_value = _orig_mean[color];
-	//		matrix_init(_layers[i]._a[color], height, width, init_values, init_value, pad, _pad_value);
-	//		matrix_init(_layers[i]._a_conv[color], height, width, init_values, init_value, pad, _pad_value);
-	//	}
-	//	height = _layers[i]._a[0].rows / 2;
-	//	width = _layers[i]._a[0].cols / 2;
-	//}
-	//height = height * 2;
-	//width = width * 2;
-	//for (int i = _levels-1; i >= 0; --i) {
-	//	for (int color = 0; color < 3; ++color) {
-	//		matrix_init(_layers[i]._b_conv[color], height, width, init_values, init_value, 0, _pad_value);
-	//		matrix_init(_layers[i]._b[color], height, width, init_values, init_value, pad, _pad_value);
-	//	}
-	//	height = _layers[i]._a[0].rows * 2;
-	//	width = _layers[i]._a[0].cols * 2;
-	//}
 }
-
-

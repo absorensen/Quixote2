@@ -43,7 +43,6 @@ void matrix_convolve(matrix &target, matrix &input, matrix &kernel, bool uneven 
 	const unsigned int input_rows = input.rows;
 	const unsigned int target_cols = target.cols;
 	const unsigned int target_pad = uneven ? target.padding : 0;
-	//const unsigned int target_pad = 0;
 	const unsigned int kernel_row_size = kernel.rows;
 	const int kernel_row_start = 0 - kernel_row_size / 2;
 	const int kernel_row_stop = -(kernel_row_start - 1);
@@ -82,7 +81,7 @@ void from_rgba_array_to_rgb_matrices(GLfloat* array, const unsigned int array_wi
 	const unsigned int array_limit = 4 * array_width;
 	//#pragma omp for
 	for (int i = 0, l = mat_pad; i < array_height; ++i, ++l) {
-		for (int j = 0, k = mat_pad; j < array_limit; j += stride, ++k) {
+		for (int j = 0, k = mat_pad; k < target_limit; j += stride, ++k) {
 			rgb_mat[0].values[l * mat_col + k] = array[i * array_limit + j];
 			rgb_mat[1].values[l * mat_col + k] = array[i * array_limit + j + 1];
 			rgb_mat[2].values[l * mat_col + k] = array[i * array_limit + j + 2];
@@ -97,41 +96,31 @@ void matrix_downsample_half(matrix &target, matrix &input) {
 	const unsigned int input_cols = input.cols;
 	const unsigned int input_rows = input.rows;
 
-	for (int i = 0, ty = target_pad; i < input_cols; i += stride, ++ty) {
-		for (int j = 0, tx = target_pad; j < input_rows; j += stride, ++tx) {
+	//#pragma omp for
+	for (int i = 0, ty = target_pad; i < input_rows; i += stride, ++ty) {
+		for (int j = 0, tx = target_pad; j < input_cols; j += stride, ++tx) {
 			target.values[ty * target_cols + tx] = input.values[i * input_cols + j];
 		}
 	}
-	//for (int i = 0, ty = target_pad; ty < target_cols-target_pad; i += stride, ++ty) {
-	//	for (int j = 0, tx = target_pad; tx < target.rows - target_pad; j += stride, ++tx) {
-	//		target.values[ty * target_cols + tx] = input.values[i * input_cols + j];
-	//	}
-	//}
 }
 
-void matrix_upsample_zeros_double(matrix &target, matrix &input, unsigned int pad) {
+void matrix_upsample_zeros_double(matrix &target, matrix &input) {
 	const unsigned int in_pad = input.padding;
 	const unsigned int input_cols = input.cols;
-	const unsigned int input_limit_cols = input.cols - in_pad;
+	const unsigned int input_limit_cols = input.cols - input_cols;
 	const unsigned int input_rows = input.rows;
-	const unsigned int input_limit_rows = input.rows - in_pad;
+	const unsigned int input_limit_rows = input.rows - input_cols;
 	const unsigned int target_cols = target.cols;
 	const unsigned int target_pad = target.padding;
-	const unsigned int target_limit_cols = target_cols - pad;
+	const unsigned int target_limit_cols = target_cols - target_pad;
 	const unsigned int target_rows = target.rows;
-	const unsigned int target_limit_rows = target_rows - pad;
+	const unsigned int target_limit_rows = target_rows - target_pad;
 	const unsigned int target_limit = target_cols * target.rows;
 	const unsigned int stride = 2;
 
-	//for (int iy = pad, ty = 0; iy < input_limit_rows; ++iy, ty += stride) {
-	//	for (int ix = pad, tx = 0; ix < input_limit_cols; ++ix, tx += stride) {
-	//		target.values[ty * target_cols + tx] = input.values[iy*input_cols + ix];
-	//	}
-	//}
-
 //#pragma omp for
-	for (int iy = in_pad, ty = 0; iy < input_limit_rows; ++iy, ty += stride) {
-		for (int ix = in_pad, tx = 0; ix < input_limit_cols; ++ix, tx += stride) {
+	for (int iy = in_pad, ty = 0; ty < target_rows; ++iy, ty += stride) {
+		for (int ix = in_pad, tx = 0; tx < target_cols; ++ix, tx += stride) {
 			target.values[ty * target_cols + tx] = input.values[iy*input_cols + ix];
 		}
 	}
