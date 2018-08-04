@@ -53,6 +53,7 @@ bool autofocus = false;
 bool showfocus = false;
 bool manualdof = true;
 bool ssaoViz = false;
+bool difference = false;
 cam_mode camera_model = NO_CAM_MODEL;
 
 // reconstruction
@@ -486,8 +487,10 @@ int main(int argc, char * argv[]) {
 
 	shaderOutput.use();
 	shaderOutput.setInt("inputTexture", 0);
-	shaderOutput.setInt("ssaoTexture", 0);
+	//shaderOutput.setInt("ssaoTexture", 0);
+	shaderOutput.setInt("inputTexture2", 1);
 	shaderOutput.setBool("ssaoViz", ssaoViz);
+	shaderOutput.setBool("difference", difference);
 	shaderOutput.setFloat("exposure", exposure);
 	shaderOutput.setVec3("gamma", gamma);
 
@@ -632,7 +635,7 @@ int main(int argc, char * argv[]) {
 		forwardTime = t.get_time();
 		t.start();
 
-		if (laplace_pipeline) {
+		//if (laplace_pipeline) {
 			// post processing
 			// ---------------
 			glBindFramebuffer(GL_FRAMEBUFFER, laplacePostProcessFBO);
@@ -660,22 +663,23 @@ int main(int argc, char * argv[]) {
 
 			// output
 			// ------
-			glBindFramebuffer(GL_FRAMEBUFFER, 0);
-			glDisable(GL_DEPTH_TEST);
-			glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-			shaderLaplaceReconstructionOutput.use();
-			shaderLaplaceReconstructionOutput.setVec3("gamma", gamma);
-			shaderLaplaceReconstructionOutput.setFloat("exposure", exposure);
-			shaderLaplaceReconstructionOutput.setBool("uncharted_tonemap", uncharted_tonemap);
-			glActiveTexture(GL_TEXTURE0);
-			//glBindTexture(GL_TEXTURE_2D, laplacePostProcessOutput);
-			glBindTexture(GL_TEXTURE_2D, laplaceReconstructionOutput);
-			renderQuad();
-			glEnable(GL_DEPTH_TEST);
-
-		}
-		else {
+			if (!difference) {
+				glBindFramebuffer(GL_FRAMEBUFFER, 0);
+				glDisable(GL_DEPTH_TEST);
+				glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+				glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+				shaderLaplaceReconstructionOutput.use();
+				shaderLaplaceReconstructionOutput.setVec3("gamma", gamma);
+				shaderLaplaceReconstructionOutput.setFloat("exposure", exposure);
+				shaderLaplaceReconstructionOutput.setBool("uncharted_tonemap", uncharted_tonemap);
+				glActiveTexture(GL_TEXTURE0);
+				//glBindTexture(GL_TEXTURE_2D, laplacePostProcessOutput);
+				glBindTexture(GL_TEXTURE_2D, laplaceReconstructionOutput);
+				renderQuad();
+				glEnable(GL_DEPTH_TEST);
+			}
+		//}
+		//else {
 			// post processing
 			// ---------------
 			glBindFramebuffer(GL_FRAMEBUFFER, postProcessFBO);
@@ -733,39 +737,48 @@ int main(int argc, char * argv[]) {
 				renderQuad();
 			}
 
-			glBindFramebuffer(GL_FRAMEBUFFER, 0);
-			glDisable(GL_DEPTH_TEST);
-			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-			shaderOutput.use();
-			shaderOutput.setBool("uncharted_tonemap", uncharted_tonemap);
-			shaderOutput.setBool("ssaoViz", ssaoViz);
-/*
-			if (laplace_pipeline) {
-				glActiveTexture(GL_TEXTURE0);
-				glBindTexture(GL_TEXTURE_2D, laplacePostProcessOutput);
+			if (!laplace_pipeline || difference) {
+				glBindFramebuffer(GL_FRAMEBUFFER, 0);
+				glDisable(GL_DEPTH_TEST);
+				glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+				glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+				shaderOutput.use();
+				shaderOutput.setBool("uncharted_tonemap", uncharted_tonemap);
+				shaderOutput.setBool("ssaoViz", ssaoViz);
+				shaderOutput.setBool("difference", difference);
+				
+							//if (laplace_pipeline) {
+							//	glActiveTexture(GL_TEXTURE0);
+							//	glBindTexture(GL_TEXTURE_2D, laplacePostProcessOutput);
+							//}
+							//else
+				if (difference) {
+					glActiveTexture(GL_TEXTURE0);
+					glBindTexture(GL_TEXTURE_2D, postProcessOutput);
+					glActiveTexture(GL_TEXTURE1);
+					glBindTexture(GL_TEXTURE_2D, laplaceReconstructionOutput);
+				}
+				else if (camera_model == NAIVE) {
+					glActiveTexture(GL_TEXTURE0);
+					glBindTexture(GL_TEXTURE_2D, cameraNaiveOutput);
+				}
+				else if (camera_model == PHYSICAL) {
+					glActiveTexture(GL_TEXTURE0);
+					glBindTexture(GL_TEXTURE_2D, cameraPhysicalOutput);
+				}
+				else if (camera_model == NO_CAM_MODEL) {
+					glActiveTexture(GL_TEXTURE0);
+					glBindTexture(GL_TEXTURE_2D, postProcessOutput);
+				}
+				if (ssaoViz) {
+					glActiveTexture(GL_TEXTURE1);
+					glBindTexture(GL_TEXTURE_2D, ssaoBufferBlur);
+				}
+				renderQuad();
+				glEnable(GL_DEPTH_TEST);
 			}
-			else*/ if (camera_model == NAIVE) {
-				glActiveTexture(GL_TEXTURE0);
-				glBindTexture(GL_TEXTURE_2D, cameraNaiveOutput);
-			}
-			else if (camera_model == PHYSICAL) {
-				glActiveTexture(GL_TEXTURE0);
-				glBindTexture(GL_TEXTURE_2D, cameraPhysicalOutput);
-			}
-			else if (camera_model == NO_CAM_MODEL) {
-				glActiveTexture(GL_TEXTURE0);
-				glBindTexture(GL_TEXTURE_2D, postProcessOutput);
-			}
-			if (ssaoViz) {
-				glActiveTexture(GL_TEXTURE1);
-				glBindTexture(GL_TEXTURE_2D, ssaoBufferBlur);
-			}
-			renderQuad();
-			glEnable(GL_DEPTH_TEST);
 
-
-		}
+		//}
 
 		t.stop();
 		postProcessTime = t.get_time();

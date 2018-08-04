@@ -17,8 +17,8 @@ void matrix_convolve_padded_to_non(matrix &target, matrix &input, matrix &kernel
 	float sum;
 	// for each pixel
 	//#pragma omp parallel for private(sum)
-	for (int i = input_pad, ty = 0; i < input_limit_rows; ++i, ++ty) {
-		for (int j = input_pad, tx = 0; j < input_limit_cols; ++j, ++tx) {
+	for (unsigned int i = input_pad, ty = 0; i < input_limit_rows; ++i, ++ty) {
+		for (unsigned int j = input_pad, tx = 0; j < input_limit_cols; ++j, ++tx) {
 			sum = 0.0f;
 			// convolve
 			for (int k = kernel_row_start, k_row = 0; k < kernel_row_stop; ++k, ++k_row) {
@@ -54,12 +54,12 @@ void matrix_convolve(matrix &target, matrix &input, matrix &kernel, bool uneven 
 	// for each pixel
 	//#pragma omp for
 	//#pragma omp parallel for private(sum)
-	for (int i = 0, ty = target_pad; i < input_rows; ++i, ++ty) {
-		for (int j = 0, tx = target_pad; j < input_cols; ++j, ++tx) {
+	for (unsigned int i = input.padding, ty = target.padding; i < input_rows-input.padding; ++i, ++ty) {
+		for (unsigned int j = input.padding, tx = target.padding; j < input_cols-input.padding; ++j, ++tx) {
 			sum = 0.0f;
 			// convolve
 			for (int k = kernel_row_start, k_row = 0; k < kernel_row_stop; ++k, ++k_row) {
-				if (i + k < 0 || i + k >= input_rows) continue;
+				if (k+i < 0 || k+i >= input_rows) continue;
 
 				for (int l = kernel_col_start, k_col = 0; l < kernel_col_stop; ++l, ++k_col) {
 					if (j + l < 0 || j + l >= input_cols) continue;
@@ -73,6 +73,42 @@ void matrix_convolve(matrix &target, matrix &input, matrix &kernel, bool uneven 
 	}
 }
 
+void propagate_border_values(matrix &target) {
+	const unsigned int pad = target.padding;
+	const unsigned int target_cols = target.cols;
+	const unsigned int target_rows = target.rows;
+
+	// top rows
+	for (unsigned int i = 0; i < pad; ++i) {
+		for (unsigned int j = 0; j < target_cols; ++j) {
+			target.values[i * target_cols + j] = target.values[pad * target_cols + j];
+		}
+	}
+
+	// bottom rows
+	for (unsigned int i = target_rows - pad - 1; i < target_rows; ++i) {
+		for (unsigned int j = 0; j < target_cols; ++j) {
+			target.values[i * target_cols + j] = target.values[(target_rows - pad) * target_cols + j];
+		}
+	}
+
+	// sides
+	const unsigned int pad_sides = target_rows - pad;
+	for (unsigned int i = pad; i < pad_sides; ++i) {
+		// left sides
+		float replicate = target.values[i * target_cols + pad];
+		for (unsigned int j = 0; j < pad; ++j) {
+			target.values[i * target_cols + j] = replicate;
+		}
+
+		// right sides
+		replicate = target.values[i * target_cols + (target_cols - pad)];
+		for (unsigned int k = target_cols - pad; k < target_cols; ++k) {
+			target.values[i * target_cols + k] = replicate;
+		}
+	}
+}
+
 void from_rgba_array_to_rgb_matrices(GLfloat* array, const unsigned int array_width, const unsigned int array_height, matrix *rgb_mat) {
 	const unsigned int mat_pad = rgb_mat[0].padding;
 	const unsigned int mat_row = rgb_mat[0].rows;
@@ -81,11 +117,21 @@ void from_rgba_array_to_rgb_matrices(GLfloat* array, const unsigned int array_wi
 	const unsigned int stride = 4;
 	const unsigned int array_limit = 4 * array_width;
 	//#pragma omp for
-	for (int i = 0, l = mat_pad; i < array_height; ++i, ++l) {
-		for (int j = 0, k = mat_pad; j < array_limit; j += stride, ++k) {
+	for (unsigned int i = 0, l = mat_pad; i < array_height; ++i, ++l) {
+		for (unsigned int j = 0, k = mat_pad; j < array_limit; j += stride, ++k) {
 			rgb_mat[0].values[l * mat_col + k] = array[i * array_limit + j];
 			rgb_mat[1].values[l * mat_col + k] = array[i * array_limit + j + 1];
 			rgb_mat[2].values[l * mat_col + k] = array[i * array_limit + j + 2];
+			//if (i > 400 ) {
+			//	rgb_mat[0].values[l * mat_col + k] = 0.0f;
+			//	rgb_mat[1].values[l * mat_col + k] = 0.0f;
+			//	rgb_mat[2].values[l * mat_col + k] = 0.0f;
+			//}
+			//else {
+			//	rgb_mat[0].values[l * mat_col + k] = 1.0f;
+			//	rgb_mat[1].values[l * mat_col + k] = 1.0f;
+			//	rgb_mat[2].values[l * mat_col + k] = 1.0f;
+			//}
 		}
 	}
 }
@@ -97,8 +143,8 @@ void matrix_downsample_half(matrix &target, matrix &input) {
 	const unsigned int input_cols = input.cols;
 	const unsigned int input_rows = input.rows;
 
-	for (int i = 0, ty = target_pad; i < input_cols; i += stride, ++ty) {
-		for (int j = 0, tx = target_pad; j < input_rows; j += stride, ++tx) {
+	for (unsigned int i = 0, ty = target_pad; i < input_cols; i += stride, ++ty) {
+		for (unsigned int j = 0, tx = target_pad; j < input_rows; j += stride, ++tx) {
 			target.values[ty * target_cols + tx] = input.values[i * input_cols + j];
 		}
 	}
@@ -130,8 +176,8 @@ void matrix_upsample_zeros_double(matrix &target, matrix &input, unsigned int pa
 	//}
 
 //#pragma omp for
-	for (int iy = in_pad, ty = 0; iy < input_limit_rows; ++iy, ty += stride) {
-		for (int ix = in_pad, tx = 0; ix < input_limit_cols; ++ix, tx += stride) {
+	for (unsigned int iy = in_pad, ty = 0; iy < input_limit_rows; ++iy, ty += stride) {
+		for (unsigned int ix = in_pad, tx = 0; ix < input_limit_cols; ++ix, tx += stride) {
 			target.values[ty * target_cols + tx] = input.values[iy*input_cols + ix];
 		}
 	}
@@ -157,8 +203,8 @@ void matrix_transfer_matrix(matrix &target, matrix &input) {
 	const unsigned int input_row = input.rows;
 	const unsigned int input_col = input.cols;
 	//#pragma omp parallel for
-	for (int i = 0; i < target_row; ++i) {
-		for (int j = 0; j < target_col; ++j) {
+	for (unsigned int i = 0; i < target_row; ++i) {
+		for (unsigned int j = 0; j < target_col; ++j) {
 			target.values[i * target_col + j] = input.values[i * input_col + j];
 		}
 	}
@@ -194,8 +240,8 @@ void matrix_transfer_matrix_padded_target(matrix &target, matrix &input) {
 	const unsigned int target_cols = target.cols;
 	const unsigned int target_pad = target.padding;
 	// for each pixel
-	for (int i = 0, ty = target_pad; i < input_rows; ++i, ++ty) {
-		for (int j = 0, tx = target_pad; j < input_cols; ++j, ++tx) {
+	for (unsigned int i = 0, ty = target_pad; i < input_rows; ++i, ++ty) {
+		for (unsigned int j = 0, tx = target_pad; j < input_cols; ++j, ++tx) {
 			target.values[ty * target_cols + tx] = input.values[i * input_cols + j];
 		}
 	}
@@ -211,8 +257,8 @@ void from_rgb_matrices_to_rgba_array(matrix *rgb_mat, GLfloat* array, const unsi
 	const unsigned int stride = 4;
 	const unsigned int array_limit = array_width * stride;
 //#pragma omp for
-	for (int i = 0, l = mat_pad; i < array_height; ++i, ++l) {
-		for (int j = 0, k = mat_pad; j < array_limit; j += stride, ++k) {
+	for (unsigned int i = 0, l = mat_pad; i < array_height; ++i, ++l) {
+		for (unsigned int j = 0, k = mat_pad; j < array_limit; j += stride, ++k) {
 			array[i * array_limit + j] = rgb_mat[0].values[l * mat_col + k];
 			array[i * array_limit + j + 1] = rgb_mat[1].values[l * mat_col + k];
 			array[i * array_limit + j + 2] = rgb_mat[2].values[l * mat_col + k];
@@ -240,8 +286,8 @@ void matrix_average_matrix(matrix &target, matrix &toAdd1, matrix &toAdd2) {
 	const unsigned int mat_col = target.cols - mat_pad;
 	const unsigned int row_length = target.cols;
 	//#pragma omp parallel for shared(target, toAdd1, toAdd2)
-	for (int i = mat_pad; i < mat_row; ++i) {
-		for (int j = mat_pad; j < mat_col; ++j) {
+	for (unsigned int i = mat_pad; i < mat_row; ++i) {
+		for (unsigned int j = mat_pad; j < mat_col; ++j) {
 			target.values[i * row_length + j] = (toAdd1.values[i * row_length + j] + toAdd2.values[i * row_length + j]) * 0.5f;;
 		}
 	}
@@ -253,8 +299,8 @@ void matrix_add_matrix(matrix &target, matrix &toAdd1, matrix &toAdd2) {
 	const unsigned int toAdd1_cols = toAdd1.cols;
 	const unsigned int toAdd2_cols = toAdd2.cols;
 
-	for (int i = 0; i < target_rows; ++i) {
-		for (int j = 0; j < target_cols; ++j) {
+	for (unsigned int i = 0; i < target_rows; ++i) {
+		for (unsigned int j = 0; j < target_cols; ++j) {
 			target.values[i * target_cols + j] = toAdd1.values[i * toAdd1_cols + j] + toAdd2.values[i * toAdd2_cols + j];
 		}
 	}
@@ -266,8 +312,8 @@ void matrix_mult_matrix(matrix &target, matrix &toAdd1, matrix &toAdd2) {
 	const unsigned int mat_rows = target.rows;
 	const unsigned int mat_cols = target.cols;
 	const unsigned int target_cols = target.cols;
-	for (int i = 0; i < mat_rows; ++i) {
-		for (int j = 0; j < mat_cols; ++j) {
+	for (unsigned int i = 0; i < mat_rows; ++i) {
+		for (unsigned int j = 0; j < mat_cols; ++j) {
 			target.values[i * target_cols + j] = toAdd1.values[i * mat_cols + j] * toAdd2.values[i * mat_cols + j];
 		}
 	}
@@ -277,8 +323,8 @@ void matrix_mult(matrix &target, float mult) {
 	const unsigned int mat_pad = target.padding;
 	const unsigned int mat_row = target.rows;
 	const unsigned int mat_col = target.cols;
-	for (int i = 0; i < mat_row; ++i) {
-		for (int j = 0; j < mat_col; ++j) {
+	for (unsigned int i = 0; i < mat_row; ++i) {
+		for (unsigned int j = 0; j < mat_col; ++j) {
 			target.values[i * mat_col + j] *= mult;
 		}
 	}
@@ -289,8 +335,8 @@ void matrix_add(matrix &target, float value) {
 	const unsigned int mat_limit_row = target.rows - mat_pad;
 	const unsigned int mat_limit_col = target.cols - mat_pad;
 	const unsigned int mat_col = target.cols;
-	for (int i = mat_pad; i < mat_limit_row; ++i) {
-		for (int j = mat_pad; j < mat_limit_col; ++j) {
+	for (unsigned int i = mat_pad; i < mat_limit_row; ++i) {
+		for (unsigned int j = mat_pad; j < mat_limit_col; ++j) {
 			target.values[i * mat_col + j] += value;
 		}
 	}
@@ -302,8 +348,8 @@ void matrix_mean(matrix &target, float &mean) {
 	const unsigned int mat_col = target.cols - mat_pad;
 	const unsigned int row_length = target.cols;
 	float sum = 0.0f;
-	for (int i = mat_pad; i < mat_row; ++i) {
-		for (int j = mat_pad; j < mat_col; ++j) {
+	for (unsigned int i = mat_pad; i < mat_row; ++i) {
+		for (unsigned int j = mat_pad; j < mat_col; ++j) {
 			sum += target.values[i * row_length + j];
 		}
 	}
@@ -315,8 +361,8 @@ void matrix_sub_matrix(matrix &target, matrix &toAdd1, matrix &toAdd2) {
 	const unsigned int mat_row = target.rows;
 	const unsigned int mat_col = target.cols;
 	//#pragma omp parallel for shared(target, toAdd1, toAdd2)
-	for (int i = 0; i < mat_row; ++i) {
-		for (int j = 0; j < mat_col; ++j) {
+	for (unsigned int i = 0; i < mat_row; ++i) {
+		for (unsigned int j = 0; j < mat_col; ++j) {
 			target.values[i * mat_col + j] = toAdd1.values[i * mat_col + j] - toAdd2.values[i * mat_col + j];
 		}
 	}
@@ -327,13 +373,13 @@ void matrix_deallocate(matrix &mat) {
 }
 
 void array_set_all_values(GLfloat* array, unsigned int length, float value) {
-	for (int i = 0; i < length; ++i) {
+	for (unsigned int i = 0; i < length; ++i) {
 		array[i] = value;
 	}
 }
 
 void array_mult_all_values(GLfloat* array, unsigned int length, float value) {
-	for (int i = 0; i < length; ++i) {
+	for (unsigned int i = 0; i < length; ++i) {
 		array[i] *= value;
 	}
 }
@@ -341,12 +387,12 @@ void array_mult_all_values(GLfloat* array, unsigned int length, float value) {
 void matrix_set_all_values(matrix& mat, const float value) {
 	const unsigned int limit = mat.rows * mat.cols;
 
-	for (int i = 0; i < limit; ++i) {
+	for (unsigned int i = 0; i < limit; ++i) {
 		mat.values[i] = value;
 	}
 }
 
-void matrix_init(matrix &mat, const unsigned int rows, const unsigned int cols, const bool init, const float initialValue, const int pad, const float padValue) {
+void matrix_init(matrix &mat, const unsigned int rows, const unsigned int cols, const bool init, const float initialValue, const unsigned int pad, const float padValue) {
 	mat.cols = cols + pad * 2;
 	mat.rows = rows + pad * 2;
 	mat.padding = pad;
@@ -355,8 +401,8 @@ void matrix_init(matrix &mat, const unsigned int rows, const unsigned int cols, 
 	if (init) {
 		const int limit_rows = mat.rows;
 		const int limit_cols = mat.cols;
-		for (int i = pad; i < limit_rows - pad; ++i) {
-			for (int j = pad; j < limit_cols - pad; ++j) {
+		for (unsigned int i = pad; i < limit_rows - pad; ++i) {
+			for (unsigned int j = pad; j < limit_cols - pad; ++j) {
 				mat.values[i * limit_rows + j] = initialValue;
 			}
 		}
@@ -365,22 +411,22 @@ void matrix_init(matrix &mat, const unsigned int rows, const unsigned int cols, 
 	if (pad > 0) {
 		const int limit_rows = mat.rows;
 		const int limit_cols = mat.cols;
-		for (int i = 0; i < pad; ++i) {
-			for (int j = 0; j < limit_cols; ++j) {
+		for (unsigned int i = 0; i < pad; ++i) {
+			for (unsigned int j = 0; j < limit_cols; ++j) {
 				mat.values[i * limit_cols + j] = padValue;
 			}
 		}
-		for (int i = limit_rows - pad - 1; i < limit_rows; ++i) {
-			for (int j = 0; j < limit_cols; ++j) {
+		for (unsigned int i = limit_rows - pad - 1; i < limit_rows; ++i) {
+			for (unsigned int j = 0; j < limit_cols; ++j) {
 				mat.values[i * limit_cols + j] = padValue;
 			}
 		}
 		const int pad_sides = limit_rows - pad;
-		for (int i = pad; i < pad_sides; ++i) {
-			for (int j = 0; j < pad; ++j) {
+		for (unsigned int i = pad; i < pad_sides; ++i) {
+			for (unsigned int j = 0; j < pad; ++j) {
 				mat.values[i * limit_cols + j] = padValue;
 			}
-			for (int k = limit_cols - pad; k < limit_cols; ++k) {
+			for (unsigned int k = limit_cols - pad; k < limit_cols; ++k) {
 				mat.values[i * limit_cols + k] = padValue;
 			}
 		}
@@ -394,28 +440,28 @@ void matrix_reset(matrix &mat, const float initialValue, const float padValue) {
 	const int limit_cols = mat.cols;
 	const int pad = mat.padding;
 
-	for (int i = pad; i < limit_rows - pad; ++i) {
-		for (int j = pad; j < limit_cols - pad; ++j) {
+	for (unsigned int i = pad; i < limit_rows - pad; ++i) {
+		for (unsigned int j = pad; j < limit_cols - pad; ++j) {
 			mat.values[i * limit_rows + j] = initialValue;
 		}
 	}
 
-	for (int i = 0; i < pad; ++i) {
-		for (int j = 0; j < limit_cols; ++j) {
+	for (unsigned int i = 0; i < pad; ++i) {
+		for (unsigned int j = 0; j < limit_cols; ++j) {
 			mat.values[i * limit_cols + j] = padValue;
 		}
 	}
-	for (int i = limit_rows - pad - 1; i < limit_rows; ++i) {
-		for (int j = 0; j < limit_cols; ++j) {
+	for (unsigned int i = limit_rows - pad - 1; i < limit_rows; ++i) {
+		for (unsigned int j = 0; j < limit_cols; ++j) {
 			mat.values[i * limit_cols + j] = padValue;
 		}
 	}
-	const int pad_sides = limit_rows - pad;
-	for (int i = pad; i < pad_sides; ++i) {
-		for (int j = 0; j < pad; ++j) {
+	const unsigned int pad_sides = limit_rows - pad;
+	for (unsigned int i = pad; i < pad_sides; ++i) {
+		for (unsigned int j = 0; j < pad; ++j) {
 			mat.values[i * limit_cols + j] = padValue;
 		}
-		for (int k = limit_cols - pad; k < limit_cols; ++k) {
+		for (unsigned int k = limit_cols - pad; k < limit_cols; ++k) {
 			mat.values[i * limit_cols + k] = padValue;
 		}
 	}
@@ -425,8 +471,8 @@ void matrix_reset_all(matrix &target, const float initialValue) {
 	const unsigned int mat_pad = target.padding;
 	const unsigned int mat_row = target.rows;
 	const unsigned int mat_col = target.cols;
-	for (int i = 0; i < mat_row; ++i) {
-		for (int j = 0; j < mat_col; ++j) {
+	for (unsigned int i = 0; i < mat_row; ++i) {
+		for (unsigned int j = 0; j < mat_col; ++j) {
 			target.values[i * mat_col + j] = initialValue;
 		}
 	}
@@ -485,4 +531,5 @@ unsigned int check_format_length(unsigned int format) {
 	case GL_LUMINANCE:
 		return 1;
 	}
+	return 0;
 }

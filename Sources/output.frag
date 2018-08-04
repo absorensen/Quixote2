@@ -4,12 +4,14 @@ out vec4 FragColor;
 in vec2 TexCoords;
 
 uniform sampler2D inputTexture;
-uniform sampler2D ssaoTexture;
+uniform sampler2D inputTexture2;
+//uniform sampler2D ssaoTexture;
 
 uniform float exposure;
 uniform vec3 gamma;
 uniform bool uncharted_tonemap;
 uniform bool ssaoViz;
+uniform bool difference;
 
 vec3 UnchartedTonemap(vec3 color);
 vec3 GammaCorrect(vec3 color);
@@ -38,6 +40,10 @@ void main()
 	color = vec3(1.0) - exp(-color * exposure);
 	FragColor = vec4(GammaCorrect(color), 1.0f);
 
+if(difference){
+ color = texture(inputTexture2, TexCoords.st).rgb - texture(inputTexture, TexCoords.st).rgb;
+ FragColor = vec4(color, 1.0f);
+ }
 //	if(ssaoViz){
 //		float ssao = texture(ssaoTexture, TexCoords.st).r;
 //		FragColor = vec4(ssao, ssao, ssao, 1.0);
