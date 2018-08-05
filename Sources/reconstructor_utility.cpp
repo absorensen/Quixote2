@@ -46,8 +46,8 @@ void matrix_convolve(matrix &target, matrix &input, matrix &kernel, bool uneven 
 	const int kernel_col_start = 0 - kernel_col_size / 2;
 	const int kernel_col_stop = -(kernel_col_start - 1);
 	float sum;
-	for (unsigned int i = input.padding, ty = target.padding; i < input_rows-input.padding; ++i, ++ty) {
-		for (unsigned int j = input.padding, tx = target.padding; j < input_cols-input.padding; ++j, ++tx) {
+	for (unsigned int i = 0, ty = 0; i < input_rows; ++i, ++ty) {
+		for (unsigned int j = 0, tx = 0; j < input_cols; ++j, ++tx) {
 			sum = 0.0f;
 			// convolve
 			for (int k = kernel_row_start, k_row = 0; k < kernel_row_stop; ++k, ++k_row) {
