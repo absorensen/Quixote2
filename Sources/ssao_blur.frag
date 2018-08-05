@@ -1,3 +1,5 @@
+// based on https://github.com/JoeyDeVries/LearnOpenGL/blob/master/src/5.advanced_lighting/9.ssao/9.ssao_blur.fs
+
 #version 430 core
 out float FragColor;
 

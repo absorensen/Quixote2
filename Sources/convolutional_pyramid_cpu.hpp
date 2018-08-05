@@ -1,3 +1,5 @@
+// based on http://www.cs.huji.ac.il/labs/cglab/projects/convpyr/data/convpyr-small.pdf
+
 #pragma once
 #ifndef CONV_PYR_CPU_H
 #define CONV_PYR_CPU_H
@@ -42,9 +44,5 @@ private:
 	void ConvPyrCPU::clean_up();
 
 };
-
-
-
-
 
 #endif

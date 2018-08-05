@@ -25,7 +25,6 @@ double deltaTime = 0.0f;
 double lastFrame = 0.0;
 
 
-
 // deferred
 unsigned int gBuffer, gPosition, gNormal, gAlbedoSpec, gAO, accumulatorDepth, deferredOutput;
 
@@ -38,7 +37,6 @@ std::vector<glm::vec3> ssaoNoise;
 
 // forward
 unsigned int forwardFBO, forwardBuffer, forwardDepthTex, forwardDepth, forwardOutput;
-
 
 // switch between primary and laplacian domain post processing pipelines
 bool laplace_pipeline = true;
@@ -61,8 +59,6 @@ unsigned int laplacePostProcessFBO, laplaceProcessBuffer, laplacePostProcessDept
 const int budget = 1;
 bool laplace_edges = true;
 bool laplace_transparency = true;
-//unsigned int source_list;
-//Shader g2r_prog;
 
 // output stage
 glm::vec3 gamma(1.0f / 2.2f);
@@ -70,6 +66,10 @@ float exposure = 1.0f;
 float focus = 0.96f;
 bool uncharted_tonemap = false;
 bool print_timing = false;
+
+
+
+
 
 // object specific
 // ---------------
@@ -97,13 +97,11 @@ unsigned int quadVBO;
 
 int main(int argc, char * argv[]) {
 
-	// glfw: initialize and configure
-	// ------------------------------
+	// initialize and configure
 	glfwInit();
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-	//glfwWindowHint(GLFW_SAMPLES, 8);
 
 #ifdef __APPLE__
 	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
@@ -121,24 +119,27 @@ int main(int argc, char * argv[]) {
 	glfwSetCursorPosCallback(window, mouse_callback);
 	glfwSetScrollCallback(window, scroll_callback);
 
-	// tell GLFW to capture our mouse
 	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
-	// glad: load all OpenGL function pointers
+
+	// load OpenGL function pointers
 	// ---------------------------------------
 	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
 	{
 		std::cout << "Failed to initialize GLAD" << std::endl;
 		return -1;
 	}
+
 	// configure global opengl state
 	// -----------------------------
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS);
 
-	// init modules
+	// init reconstructor
 	Reconstructor* reconstructor = new Reconstructor(SCR_WIDTH, SCR_HEIGHT, budget, GL_RGBA, CONV_PYR_CPU);
 
+
+	// create shaders
 	std::string path("Glitter/Sources/");
 	Shader shaderGeometryPass(path + "g_buffer.vert", path + "g_buffer.frag");
 	Shader shaderLightingPass(path + "simple.vert", path + "deferred_shading.frag");
@@ -157,6 +158,7 @@ int main(int argc, char * argv[]) {
 	Shader shaderLaplaceReconstructionOutput(path + "simple.vert", path + "laplace_reconstruction_output.frag");
 	//g2r_prog = Shader(path+ "fft_texcoord.vert", path + "fft_g2r.frag");
 
+
 	// -- making models, making shit, fighting round the world --
 	Model nanosuit("Glitter/Resources/models/nanosuit/nanosuit.obj", true);
 	const float offset_models = 2.0;
@@ -169,6 +171,8 @@ int main(int argc, char * argv[]) {
 	objectPositions.push_back(glm::vec3(-offset_models, -offset_models, 3.0));
 	objectPositions.push_back(glm::vec3(0.0, -offset_models, offset_models));
 	objectPositions.push_back(glm::vec3(offset_models, -offset_models, offset_models));
+
+
 
 	// -- deferred rendering --
 	glGenFramebuffers(1, &gBuffer);
@@ -211,11 +215,8 @@ int main(int argc, char * argv[]) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT4, GL_TEXTURE_2D, deferredOutput, 0);
 
-	// tell OpenGL which color attachments we'll use (of this framebuffer) for rendering 
 	GLuint deferredAttachments[5] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3, GL_COLOR_ATTACHMENT4 };
 	glDrawBuffers(5, deferredAttachments);
-
-
 
 	// create and attach depth buffer (renderbuffer)
 	glGenRenderbuffers(1, &accumulatorDepth);
@@ -289,7 +290,7 @@ int main(int argc, char * argv[]) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
 
-	// setup lightsBuffer
+	// forward/lights stage
 	glGenFramebuffers(1, &forwardFBO);
 	glBindFramebuffer(GL_FRAMEBUFFER, forwardFBO);
 
@@ -393,6 +394,7 @@ int main(int argc, char * argv[]) {
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
 		std::cout << "Framebuffer not complete!" << std::endl;
 
+	// for output from reconstruction
 	glGenTextures(1, &laplaceReconstructionOutput);
 	glBindTexture(GL_TEXTURE_2D, laplaceReconstructionOutput);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
@@ -403,6 +405,9 @@ int main(int argc, char * argv[]) {
 
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+
+
 
 	// lighting info
 	// -------------
@@ -424,6 +429,9 @@ int main(int argc, char * argv[]) {
 	lightColors[5] *= 20.0f;
 	lightColors[9] *= 30.0f;
 	lightColors[15] *= 60.0f;
+
+
+
 
 
 	// shader configuration
@@ -487,18 +495,16 @@ int main(int argc, char * argv[]) {
 
 	shaderOutput.use();
 	shaderOutput.setInt("inputTexture", 0);
-	//shaderOutput.setInt("ssaoTexture", 0);
 	shaderOutput.setInt("inputTexture2", 1);
 	shaderOutput.setBool("ssaoViz", ssaoViz);
 	shaderOutput.setBool("difference", difference);
 	shaderOutput.setFloat("exposure", exposure);
 	shaderOutput.setVec3("gamma", gamma);
 
-
+	// timing
 	double gBufferTime, ssaoTime, deferredTime, forwardTime, postProcessTime, reconstructionTime, outputTime;
 	int report = 0;
 	Timer t, totalTime;
-	// if shit doesn't show up try glm::mat4 model = glm::mat4(1.0f)
 
 	while (!glfwWindowShouldClose(window))
 	{
@@ -539,7 +545,8 @@ int main(int argc, char * argv[]) {
 		glBlitFramebuffer(0, 0, SCR_WIDTH, SCR_HEIGHT, 0, 0, SCR_WIDTH, SCR_HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
 		t.stop();
 		gBufferTime = t.get_time();
-		//glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+
 
 		// generate SSAO texture
 		t.start();
@@ -557,7 +564,7 @@ int main(int argc, char * argv[]) {
 		glActiveTexture(GL_TEXTURE2);
 		glBindTexture(GL_TEXTURE_2D, noiseTexture);
 		renderQuad();
-		//glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
 
 
 		// blur SSAO texture to remove noise
@@ -567,11 +574,14 @@ int main(int argc, char * argv[]) {
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, ssaoBuffer);
 		renderQuad();
-		//glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		t.stop();
 		ssaoTime = t.get_time();
 		t.start();
 		glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
+
+
+
+
 		// lighting pass
 		shaderLightingPass.use();
 
@@ -608,9 +618,10 @@ int main(int argc, char * argv[]) {
 		glActiveTexture(GL_TEXTURE3);
 		glBindTexture(GL_TEXTURE_2D, ssaoBufferBlur);
 		renderQuad();
-		//glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		t.stop();
 		deferredTime = t.get_time();
+
+		// forward/lights
 		t.start();
 		glBindFramebuffer(GL_FRAMEBUFFER, forwardFBO);
 		glClear(GL_COLOR_BUFFER_BIT);
@@ -635,6 +646,7 @@ int main(int argc, char * argv[]) {
 		forwardTime = t.get_time();
 		t.start();
 
+		// comment this pipeline in for the ability to either be able to turn off reconstruction
 		//if (laplace_pipeline) {
 			// post processing
 			// ---------------
@@ -747,11 +759,6 @@ int main(int argc, char * argv[]) {
 				shaderOutput.setBool("ssaoViz", ssaoViz);
 				shaderOutput.setBool("difference", difference);
 				
-							//if (laplace_pipeline) {
-							//	glActiveTexture(GL_TEXTURE0);
-							//	glBindTexture(GL_TEXTURE_2D, laplacePostProcessOutput);
-							//}
-							//else
 				if (difference) {
 					glActiveTexture(GL_TEXTURE0);
 					glBindTexture(GL_TEXTURE_2D, postProcessOutput);
@@ -1034,7 +1041,6 @@ void process_input(GLFWwindow* window) {
 
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
-	// set window to specified dimensions
 	glViewport(0, 0, width, height);
 }
 
@@ -1056,6 +1062,7 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
 
 }
 
+// is currently being used to set focus. Could be used for altering focal length
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
 	focus += yoffset * 0.005;
 	//camera.ProcessMouseScroll((float)yoffset);

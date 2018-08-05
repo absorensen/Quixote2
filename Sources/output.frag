@@ -1,3 +1,6 @@
+// based on https://github.com/JoeyDeVries/LearnOpenGL/blob/master/src/5.advanced_lighting/6.hdr/6.hdr.fs
+// and Uncharted Tonemap based on: https://github.com/JoshuaSenouf/GLEngine/blob/master/resources/shaders/postprocess/firstpass.frag
+
 #version 430 core
 out vec4 FragColor;
 
@@ -5,7 +8,6 @@ in vec2 TexCoords;
 
 uniform sampler2D inputTexture;
 uniform sampler2D inputTexture2;
-//uniform sampler2D ssaoTexture;
 
 uniform float exposure;
 uniform vec3 gamma;
@@ -44,10 +46,6 @@ if(difference){
  color = texture(inputTexture2, TexCoords.st).rgb - texture(inputTexture, TexCoords.st).rgb;
  FragColor = vec4(color, 1.0f);
  }
-//	if(ssaoViz){
-//		float ssao = texture(ssaoTexture, TexCoords.st).r;
-//		FragColor = vec4(ssao, ssao, ssao, 1.0);
-//	}
 }
 
 // HDR and Gamma
@@ -55,8 +53,6 @@ vec3 GammaCorrect(vec3 color){
 	return pow(color, gamma);
 }
 
-//Uncharted Tonemap
-//Uncharted Tonemap based on: https://github.com/JoshuaSenouf/GLEngine/blob/master/resources/shaders/postprocess/firstpass.frag
 vec3 UnchartedTonemap(vec3 color)
 {
   return ((color * (A * color + C * B) + D * E) / (color * ( A * color + B) + D * F)) - E_over_F;

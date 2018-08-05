@@ -1,3 +1,5 @@
+// based on https://github.com/JoeyDeVries/LearnOpenGL/blob/master/includes/learnopengl/mesh.h
+
 #ifndef MESH_H
 #define MESH_H
 

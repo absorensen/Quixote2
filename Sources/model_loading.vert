@@ -1,3 +1,5 @@
+// based on https://github.com/JoeyDeVries/LearnOpenGL/blob/master/src/3.model_loading/1.model_loading/1.model_loading.vs
+
 #version 430 core
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aNormal;

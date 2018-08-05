@@ -1,4 +1,5 @@
-// dof based on: https://github.com/orthecreedence/ghostie/blob/master/opengl/glsl/dof.bokeh.2.4.frag
+// based on: https://github.com/orthecreedence/ghostie/blob/master/opengl/glsl/dof.bokeh.2.4.frag
+
 #version 430 core
 layout (location = 0) out vec3 cameraOutput;
 

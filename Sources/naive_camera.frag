@@ -1,4 +1,5 @@
-// dof based on: http://pasteall.org/10779
+// sampling pattern based on: http://pasteall.org/10779
+
 #version 430 core
 layout (location = 0) out vec3 cameraOutput;
 
@@ -23,7 +24,7 @@ const float aspectratio = width/height;
 const vec2 aspectcorrect = vec2(1.0,aspectratio);
 
 vec3 DepthOfField(float depth, float factor);
-float Linearize(float depth);
+float linearize(float depth);
 vec4 cal_sample(vec2 coord, vec2 dofblur, float depth);
 
 void main()

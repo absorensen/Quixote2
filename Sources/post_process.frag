@@ -1,9 +1,6 @@
 #version 430 core
 layout (location = 0) out vec3 postProcessOutput;
 
-//out vec4 FragColor;
-
-
 in vec2 TexCoords;
 
 uniform sampler2D deferredOutput;
@@ -64,8 +61,4 @@ void main()
 		float c = LinearizeDepth(TexCoords.st);
 		postProcessOutput = vec3(c, c, c);
 	}
-
-
-//	postProcessOutput = vec3(texture(forwardDepthTex, TexCoords.st));
-//	FragColor = vec4(col, 1.0);
 }

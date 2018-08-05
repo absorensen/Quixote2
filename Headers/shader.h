@@ -1,5 +1,4 @@
-// based on implementation by Joey de Vries
-// url: https://learnopengl.com/Getting-started/Shaders
+// based on https://github.com/JoeyDeVries/LearnOpenGL/blob/master/includes/learnopengl/shader.h
 
 #pragma once
 

@@ -1,3 +1,6 @@
+// based on https://github.com/JoeyDeVries/LearnOpenGL/blob/master/src/5.advanced_lighting/6.hdr/6.hdr.fs
+// and Uncharted Tonemap based on: https://github.com/JoshuaSenouf/GLEngine/blob/master/resources/shaders/postprocess/firstpass.frag
+
 #version 430 core
 out vec4 FragColor;
 
@@ -43,8 +46,6 @@ vec3 GammaCorrect(vec3 color){
 	return pow(color, gamma);
 }
 
-//Uncharted Tonemap
-//Uncharted Tonemap based on: https://github.com/JoshuaSenouf/GLEngine/blob/master/resources/shaders/postprocess/firstpass.frag
 vec3 UnchartedTonemap(vec3 color)
 {
   return ((color * (A * color + C * B) + D * E) / (color * ( A * color + B) + D * F)) - E_over_F;

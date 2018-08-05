@@ -1,3 +1,5 @@
+// based on https://github.com/JoeyDeVries/LearnOpenGL/blob/master/includes/learnopengl/model.h
+
 #ifndef MODEL_H
 #define MODEL_H
 #define STB_IMAGE_IMPLEMENTATION
@@ -227,7 +229,5 @@ private:
 	}
 
 };
-
-
 
 #endif

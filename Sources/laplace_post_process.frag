@@ -3,7 +3,6 @@ layout (location = 0) out vec3 reconstructionPostProcessOut;
 
 out vec4 FragColor;
 
-
 in vec2 TexCoords;
 
 uniform sampler2D deferredOutput;
@@ -24,7 +23,6 @@ const vec2 offsets[5] = vec2[](
         vec2( offset.x,  0.0f)   // center-right
     );
 
-vec3 GammaCorrect(vec3 color);
 void main()
 {             
 	vec3 col;

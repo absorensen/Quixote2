@@ -1,3 +1,5 @@
+// based on https://github.com/JoeyDeVries/LearnOpenGL/blob/master/src/5.advanced_lighting/8.2.deferred_shading_volumes/8.2.g_buffer.fs
+
 #version 430 core
 layout (location = 0) out vec3 gPosition;
 layout (location = 1) out vec3 gNormal;

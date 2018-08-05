@@ -1,3 +1,5 @@
+// based on https://github.com/JoeyDeVries/LearnOpenGL/blob/master/src/5.advanced_lighting/8.2.deferred_shading_volumes/8.2.g_buffer.vs
+
 #version 430 core
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aNormal;

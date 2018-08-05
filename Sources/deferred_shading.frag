@@ -1,7 +1,7 @@
+// based on https://github.com/JoeyDeVries/LearnOpenGL/blob/master/src/5.advanced_lighting/8.2.deferred_shading_volumes/8.2.deferred_shading.fs
+
 #version 430 core
 layout (location = 4) out vec3 deferredOutput;
-
-//out vec4 FragColor;
 
 in vec2 TexCoords;
 
@@ -24,31 +24,26 @@ uniform vec3 viewPos;
 
 void main()
 {             
-    // gbuffer data
     vec3 FragPos = texture(gPosition, TexCoords).rgb;
     vec3 Normal = texture(gNormal, TexCoords).rgb;
     vec3 Diffuse = texture(gAlbedoSpec, TexCoords).rgb;
     float Specular = texture(gAlbedoSpec, TexCoords).a;
 	float AmbientOcclusion = texture(gAO, TexCoords).r;
     
-    // then calculate lighting as usual
     vec3 lighting  = Diffuse * 0.1 * AmbientOcclusion;
     vec3 viewDir  = normalize(viewPos - FragPos);
     for(int i = 0; i < NR_LIGHTS; ++i)
     {
-        // calculate distance between light source and current fragment
         float distance = length(lights[i].Position - FragPos);
         if(distance < lights[i].Radius)
         {
-            // diffuse
             vec3 lightDir = normalize(lights[i].Position - FragPos);
             vec3 diffuse = max(dot(Normal, lightDir), 0.0) * Diffuse * lights[i].Color;
-            // specular
+
             vec3 halfwayDir = normalize(lightDir + viewDir);  
             float spec = pow(max(dot(Normal, halfwayDir), 0.0), 16.0);
-//			float spec = pow(dot(Normal, halfwayDir), 16.0);
             vec3 specular = lights[i].Color * spec * Specular;
-            // attenuation
+
             float attenuation = 1.0 / (1.0 + lights[i].Linear * distance + lights[i].Quadratic * distance * distance);
             diffuse *= attenuation;
             specular *= attenuation;
@@ -56,6 +51,4 @@ void main()
         }
     }    
 	deferredOutput = lighting;
-
-    //FragColor = vec4(lighting, 1.0);
 }

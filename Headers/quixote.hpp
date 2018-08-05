@@ -22,9 +22,6 @@
 #include <cstdlib>
 #include <omp.h>
 
-// Reference: https://github.com/nothings/stb/blob/master/stb_image.h#L4
-// To use stb_image, add this in *one* C++ source file.
-//     #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
 #include "camera.h"
@@ -44,10 +41,6 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 unsigned int loadTexture(char const * path);
 void renderCube();
 void renderQuad();
-
-//void draw_fft_source_g();
-//void draw_fft_source_rb();
-//void set_projection();
 
 float lerp(float a, float b, float f)
 {

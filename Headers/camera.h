@@ -1,3 +1,5 @@
+// based on https://github.com/JoeyDeVries/LearnOpenGL/blob/master/includes/learnopengl/camera.h
+
 #pragma once
 
 #ifndef CAMERA_H
