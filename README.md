@@ -1,0 +1,2 @@
+# Quixote2
+I took a subset of [my LearnOpenGL implementation](https://github.com/absorensen/QRender) and used it for a school project. The idea was to do depth-of-field in the laplacian domain. I strugged to get the reconstruction to move the image from the laplacian domain back to the primary domain. There was an intensity leak in my implementation of Convolutional Pyramids which I was unable to fix.
